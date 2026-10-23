@@ -37,8 +37,9 @@ const web = http.createServer((req, res) => {
     const rule = JSON.parse(readFileSync(join(WEB, 'vercel.json'), 'utf8')).headers.find(h => h.source === '/(.*)');
     for (const { key, value } of rule.headers) headers[key] = value.replace('http://localhost:*', 'http://127.0.0.1:*');
   }
-  if (p === '/config.js' && !/noserver=1/.test(req.headers.cookie || '')) {
-    res.writeHead(200, headers); return res.end(`window.COMPRAS_CONFIG={API_URL:${JSON.stringify(API)}};`);
+  if (p === '/config.js') {   // el config.js real apunta a producción: en la prueba se reemplaza
+    const none = /noserver=1/.test(req.headers.cookie || '');
+    res.writeHead(200, headers); return res.end(`window.COMPRAS_CONFIG={API_URL:${JSON.stringify(none ? '' : API)}};`);
   }
   res.writeHead(200, headers); res.end(readFileSync(f));
 });
@@ -93,6 +94,17 @@ await step('crea la cuenta y abre Home con el campo para agregar (sin abrir el t
   assert.equal(await a.locator('#nl').isHidden(), true, 'sin listas no hay acceso rápido');
   assert.notEqual(await activeTag(a), 'qi');
 });
+await step('Home: el formulario tiene el orden texto → cantidad → selector de lista → Agregar', async () => {
+  const bb = sel => a.locator(sel).boundingBox();
+  const [qi, qs, dest, add] = [await bb('#qi'), await bb('.qa.home .qs'), await bb('#dest'), await bb('.qa.home button[type=submit]')];
+  assert.ok(qi.y + qi.height <= qs.y + 1, 'cantidad debajo del campo de texto');
+  assert.ok(qs.x + qs.width <= dest.x + 1, 'selector de lista a la derecha de la cantidad');
+  assert.ok(Math.abs(qs.y - dest.y) < 12, 'cantidad y selector en la misma fila');
+  assert.ok(Math.max(qs.y + qs.height, dest.y + dest.height) <= add.y + 1, 'botón Agregar al final');
+  assert.equal((await a.locator('.qa.home button[type=submit]').textContent()).trim(), 'Agregar');
+  assert.ok(await a.locator('#nv').isVisible());
+  await a.screenshot({ path: join(SHOTS, '2a-home-vacio.png') });
+});
 await step('agregar sin tener listas crea una lista sola', async () => {
   await a.fill('#qi', 'Fideos'); await a.keyboard.press('Enter');
   await a.locator('#dest b', { hasText: 'Mi lista' }).waitFor();
@@ -134,6 +146,8 @@ await step('repetir un producto suma la cantidad en vez de duplicarlo', async ()
   await a.fill('#qi', 'leche'); await a.keyboard.press('Enter');
   assert.equal((await rowsIn(a, '#prev')).filter(x => x === 'Leche').length, 1);
   assert.equal(await qty(a, '#prev', 'Leche'), '×4');
+  await a.fill('#qi', 'tomates'); await a.locator('.qa.home button[type=submit]').click();
+  assert.ok((await rowsIn(a, '#prev')).includes('Tomates'), 'el botón Agregar funciona con un toque');
   await a.screenshot({ path: join(SHOTS, '2-home.png') });
 });
 await step('marcar desde Home lo saca de "por comprar"', async () => {

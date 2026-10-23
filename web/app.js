@@ -246,7 +246,7 @@ const LOGO = '<svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2
 const SYL = { ok: 'Sincronizado', pend: 'Guardando…', off: 'Sin conexión', err: 'Error al sincronizar' };
 const syncBadge = () => `<span class="sy ${st}" role="status">${SYL[st]}</span>`;
 function paintSync() { document.querySelectorAll('.sy').forEach(e => { e.className = 'sy ' + st; e.textContent = SYL[st]; }); }
-const stepHtml = () => `<div class="qs" role="group" aria-label="Cantidad a agregar"><span>Cantidad</span><button type="button" data-a="aqm" aria-label="Menos">−</button><b id="aq">${addQty}</b><button type="button" data-a="aqp" aria-label="Más">+</button></div>`;
+const stepHtml = (label = true) => `<div class="qs" role="group" aria-label="Cantidad a agregar">${label ? '<span>Cantidad</span>' : ''}<button type="button" data-a="aqm" aria-label="Menos">−</button><b id="aq">${addQty}</b><button type="button" data-a="aqp" aria-label="Más">+</button></div>`;
 function syncStep() { const e = $('#aq'); if (e) e.textContent = addQty; }
 
 function vAuth() {
@@ -266,14 +266,17 @@ ${CFG.API_URL ? '' : `<label class="f">URL del servidor<input type="url" data-au
 /* Home: lo primero que ves. Un campo para sumar productos a la última lista usada. */
 function vHome() {
   return `<div class="hdr"><h1>Agregar</h1>${syncBadge()}</div>
-<button id="dest" class="dest" data-a="pick" aria-haspopup="dialog"></button>
-<form id="qa" class="qa home" autocomplete="off"><div class="qr"><input id="qi" class="in" type="text" placeholder="Ej: leche, 2 pan, queso x3" enterkeyhint="done" autocomplete="off" autocapitalize="sentences" aria-label="Agregar producto"><button class="btn" type="submit" aria-label="Agregar">+</button></div>${stepHtml()}</form>
+<form id="qa" class="qa home" autocomplete="off">
+<input id="qi" class="in" type="text" placeholder="Ej: leche, 2 pan, queso x3" enterkeyhint="done" autocomplete="off" autocapitalize="sentences" aria-label="Producto">
+<div class="qrow">${stepHtml(false)}<button id="dest" type="button" class="dest" data-a="pick" aria-haspopup="dialog" aria-label="Lista donde agregar"></button></div>
+<button class="btn" type="submit">Agregar</button>
+</form>
 <div id="sug"></div><div id="prev"></div>`;
 }
 function paintHome() {
   const el = $('#dest'); if (!el) return;
   const l = destList();
-  el.innerHTML = l ? `Agregando a <b>${esc(l.n)}</b> <span aria-hidden="true">▾</span>` : 'Todavía no tenés listas: se crea una al agregar';
+  el.innerHTML = l ? `<b>${esc(l.n)}</b><span aria-hidden="true">▾</span>` : '<span class="mut">Sin listas: se crea una</span><span aria-hidden="true">▾</span>';
   const prev = $('#prev');
   if (!l) prev.innerHTML = `<div class="empty"><div class="big" aria-hidden="true">📝</div><p class="mut">Escribí arriba lo que necesitás.<br>Podés poner varios separados por coma.</p></div>`;
   else {
