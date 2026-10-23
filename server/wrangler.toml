@@ -1,0 +1,13 @@
+name = "compras-server"
+main = "src/index.js"
+compatibility_date = "2025-01-01"
+
+# Namespace KV propio de esta app (no uses el de Cierre: mezclaría las cuentas).
+# Creálo con:  npx wrangler kv namespace create compras_kv   y pegá acá el "id" que te devuelve.
+[[kv_namespaces]]
+binding = "KV"
+id = "03d17279b1d64d569e7535e5f28066f7"
+
+# Opcional: limitar qué sitio puede usar la API (la URL de tu app en Vercel, sin barra final).
+# [vars]
+# ALLOWED_ORIGIN = "https://tu-app.vercel.app"

@@ -1,0 +1,9 @@
+{
+  "name": "compras",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "sync-shared": "sh scripts/sync-shared.sh",
+    "test": "node scripts/test.mjs"
+  }
+}

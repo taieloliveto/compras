@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="es-AR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Compras</title>
+<meta name="description" content="Tus listas de compras, siempre con vos.">
+<link rel="icon" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#F6F7F4" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0C100E" media="(prefers-color-scheme: dark)">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Compras">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<main id="v" aria-live="polite">
+  <p class="boot">Cargando…<br><small>Si esta pantalla no cambia, falta algún archivo de la app (<b>app.js</b> o <b>merge.js</b>). Revisá que se hayan subido todos los archivos de la carpeta <b>web</b>.</small></p>
+</main>
+
+<div id="nv" hidden>
+  <nav class="pill" aria-label="Principal">
+    <button class="nb" data-a="tab" data-t="home">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 11.5 12 4l9 7.5"/><path d="M5.5 10v9.5h13V10"/></svg>
+      <span>Home</span>
+    </button>
+    <button class="nb" data-a="tab" data-t="lists">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 6h13M8 12h13M8 18h13M3.5 6h.01M3.5 12h.01M3.5 18h.01"/></svg>
+      <span>Listas</span>
+    </button>
+    <button class="nb" data-a="tab" data-t="set">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h10M18 7h2M4 17h2M10 17h10"/><circle cx="16" cy="7" r="2"/><circle cx="8" cy="17" r="2"/></svg>
+      <span>Ajustes</span>
+    </button>
+  </nav>
+  <button id="nl" class="pill nb last" data-a="lastlist" hidden>
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 7h12l-1 13H7L6 7Z"/><path d="M9 7a3 3 0 0 1 6 0"/></svg>
+    <span id="nl-n"></span>
+  </button>
+</div>
+
+<div id="ov-root"></div>
+<div id="t-root"></div>
+<noscript><p style="padding:24px">Compras necesita JavaScript para funcionar.</p></noscript>
+<script src="config.js"></script>
+<script src="merge.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
