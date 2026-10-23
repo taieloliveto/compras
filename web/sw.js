@@ -1,5 +1,5 @@
 /* Service worker de Compras: la app abre sin conexión. Los datos viven en localStorage y se sincronizan aparte. */
-const V = 'compras-v2';
+const V = 'compras-v3';
 const SHELL = ['./', 'index.html', 'styles.css', 'app.js', 'merge.js', 'config.js', 'manifest.webmanifest', 'icons/icon-192.png', 'icons/icon-512.png'];
 
 self.addEventListener('install', e => {

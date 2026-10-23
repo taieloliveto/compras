@@ -54,6 +54,13 @@ await ok('la última lista usada se resuelve por fecha', () => {
   const m = mergeState({ last: 'a', lastU: 1 }, { last: 'b', lastU: 2 });
   assert.equal(m.last, 'b');
 });
+await ok('el nombre se resuelve por fecha y se recorta', () => {
+  const m = mergeState({ name: 'Ana', nameU: 1 }, { name: 'Tai', nameU: 2 });
+  assert.equal(m.name, 'Tai');
+  assert.equal(mergeState({ name: 'Tai', nameU: 2 }, { name: 'Ana', nameU: 1 }).name, 'Tai');
+  assert.equal(mergeState({ name: '' , nameU: 0 }, { name: 'Tai', nameU: 5 }).name, 'Tai');
+  assert.equal(sanitizeState({ name: '  ' + 'x'.repeat(80) }).name.length, 30);
+});
 await ok('el catálogo de frecuentes se une', () => {
   const m = mergeState({ cat: { leche: { n: 'Leche', c: 3, u: 5 } } }, { cat: { pan: { n: 'Pan', c: 1, u: 1 } } });
   assert.deepEqual(Object.keys(m.cat).sort(), ['leche', 'pan']);

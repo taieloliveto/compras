@@ -9,7 +9,7 @@ const str = (s, n) => typeof s === 'string' ? s.slice(0, n) : '';
 const num = x => Number.isFinite(+x) ? +x : 0;
 const norm = s => String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/\s+/g, ' ').trim();
 
-function emptyState() { return { lists: {}, cat: {}, last: '', lastU: 0 }; }
+function emptyState() { return { lists: {}, cat: {}, last: '', lastU: 0, name: '', nameU: 0 }; }
 
 /* Limpia y acota cualquier dato que venga de afuera (disco, red, otro dispositivo). */
 function sanitizeState(d, now) {
@@ -52,6 +52,8 @@ function sanitizeState(d, now) {
 
   out.last = idOk(d.last) ? d.last : '';
   out.lastU = num(d.lastU);
+  out.name = str(typeof d.name === 'string' ? d.name.trim() : '', 30);
+  out.nameU = num(d.nameU);
   return out;
 }
 
@@ -82,5 +84,8 @@ function mergeState(a, b, now) {
   const w = a.lastU >= b.lastU ? a : b;
   out.last = w.last;
   out.lastU = w.lastU;
+  const wn = a.nameU >= b.nameU ? a : b;
+  out.name = wn.name;
+  out.nameU = wn.nameU;
   return sanitizeState(out, now);
 }

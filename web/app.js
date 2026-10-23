@@ -1,7 +1,7 @@
 'use strict';
 /* Compras — app de listas de compras (PWA). Usa merge.js (global: mergeState, sanitizeState, emptyState, norm). */
 (() => {
-const VERSION = '1.1.0';
+const VERSION = '1.2.0';
 const CFG = window.COMPRAS_CONFIG || {};
 const KEY = 'compras.v1';
 const $ = s => document.querySelector(s);
@@ -23,7 +23,7 @@ try {
 const save = () => { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (_) {} };
 
 let view = 'auth', cur = '', sheet = null, busy = false, st = 'ok', rev = 0;
-let authMode = 'login', authErr = '', authEmail = S.email, authPass = '';
+let authMode = 'login', authErr = '', authEmail = S.email, authPass = '', authName = '';
 let installEvt = null;
 let addQty = 1;                       // cantidad elegida antes de agregar
 
@@ -153,6 +153,10 @@ function addText(text) {
     addQty = 1;
     if (D().last !== l.id) { D().last = l.id; D().lastU = now(); }
     touch();
+    if (view === 'home') {
+      const lid = l.id;
+      toast(n === 1 ? `“${entries[0].n}” agregado a ${l.n}` : `${n} productos agregados a ${l.n}`, 'Ver lista', () => openList(lid));
+    }
   }
   return n;
 }
@@ -255,6 +259,7 @@ function vAuth() {
 <p class="mut">Tus listas de compras, siempre con vos y en todos tus dispositivos.</p>
 <div class="seg" role="group" aria-label="Modo"><button type="button" data-a="am" data-m="login" aria-pressed="${login}">Ingresar</button><button type="button" data-a="am" data-m="signup" aria-pressed="${!login}">Crear cuenta</button></div>
 <form id="af" novalidate>
+${login ? '' : `<label class="f">¿Cómo te gustaría que te llamen?<input type="text" data-au="name" value="${esc(authName)}" maxlength="30" placeholder="Tu nombre o apodo" autocomplete="given-name" autocapitalize="words"></label>`}
 <label class="f">Email<input type="email" data-au="email" value="${esc(authEmail)}" autocomplete="email" inputmode="email" autocapitalize="none" spellcheck="false"></label>
 <label class="f">Contraseña<input type="password" data-au="pass" value="${esc(authPass)}" autocomplete="${login ? 'current-password' : 'new-password'}" ${login ? '' : 'placeholder="Mínimo 8 caracteres"'}></label>
 ${CFG.API_URL ? '' : `<label class="f">URL del servidor<input type="url" data-au="server" value="${esc(S.server)}" placeholder="https://compras-server.tu-usuario.workers.dev" autocapitalize="none" spellcheck="false"></label>`}
@@ -265,29 +270,23 @@ ${CFG.API_URL ? '' : `<label class="f">URL del servidor<input type="url" data-au
 
 /* Home: lo primero que ves. Un campo para sumar productos a la última lista usada. */
 function vHome() {
-  return `<div class="hdr"><h1>Agregar</h1>${syncBadge()}</div>
+  return `<div class="bar"><span></span>${syncBadge()}</div>
+<section class="homec">
+<h1 id="hi"></h1>
+<p class="ask">¿Qué vas a agregar hoy?</p>
 <form id="qa" class="qa home" autocomplete="off">
 <input id="qi" class="in" type="text" placeholder="Ej: leche, 2 pan, queso x3" enterkeyhint="done" autocomplete="off" autocapitalize="sentences" aria-label="Producto">
 <div class="qrow">${stepHtml(false)}<button id="dest" type="button" class="dest" data-a="pick" aria-haspopup="dialog" aria-label="Lista donde agregar"></button></div>
 <button class="btn" type="submit">Agregar</button>
 </form>
-<div id="sug"></div><div id="prev"></div>`;
+<div id="sug"></div>
+</section>`;
 }
 function paintHome() {
   const el = $('#dest'); if (!el) return;
   const l = destList();
-  el.innerHTML = l ? `<b>${esc(l.n)}</b><span aria-hidden="true">▾</span>` : '<span class="mut">Sin listas: se crea una</span><span aria-hidden="true">▾</span>';
-  const prev = $('#prev');
-  if (!l) prev.innerHTML = `<div class="empty"><div class="big" aria-hidden="true">📝</div><p class="mut">Escribí arriba lo que necesitás.<br>Podés poner varios separados por coma.</p></div>`;
-  else {
-    const p = pendingOf(l), d = doneOf(l);
-    let h = '';
-    if (p.length) h += `<div class="sec"><h3>Por comprar · ${p.length}</h3></div>` + p.slice(0, 10).map(rowHtml).join('') + (p.length > 10 ? `<p class="mut small">y ${p.length - 10} más…</p>` : '');
-    else if (d.length) h += `<div class="alldone">🎉 ¡Todo comprado!</div>`;
-    else h += `<div class="empty"><div class="big" aria-hidden="true">📝</div><p class="mut">La lista está vacía.<br>Escribí arriba lo que necesitás.</p></div>`;
-    h += `<button class="btn ghost" data-a="opendest" style="margin-top:16px">Abrir “${esc(l.n)}”</button>`;
-    prev.innerHTML = h;
-  }
+  $('#hi').textContent = D().name ? `Hola ${D().name} 👋` : 'Hola 👋';
+  el.innerHTML = l ? `<b>${esc(l.n)}</b><span aria-hidden="true">▾</span>` : '<span class="mut">Lista nueva</span><span aria-hidden="true">▾</span>';
   paintSug();
 }
 
@@ -298,7 +297,7 @@ function listStats(l) {
 function cardHtml(l) {
   const s = listStats(l);
   const sub = !s.total ? 'Vacía' : s.left === 0 ? 'Todo comprado ✓' : `${s.left} por comprar · ${s.total} en total`;
-  return `<button class="card" data-a="open" data-id="${esc(l.id)}"><b>${esc(l.n)}${D().last === l.id ? '<span class="tag">Última</span>' : ''}</b><small>${sub}</small>${s.total ? `<div class="bar" aria-hidden="true"><i style="width:${Math.round(s.done / s.total * 100)}%"></i></div>` : ''}</button>`;
+  return `<button class="card" data-a="open" data-id="${esc(l.id)}"><b>${esc(l.n)}${D().last === l.id ? '<span class="tag">Última</span>' : ''}</b><small>${sub}</small>${s.total ? `<div class="pbar" aria-hidden="true"><i style="width:${Math.round(s.done / s.total * 100)}%"></i></div>` : ''}</button>`;
 }
 function cardsHtml() {
   const L = lists();
@@ -306,7 +305,7 @@ function cardsHtml() {
   return L.map(cardHtml).join('');
 }
 function vLists() {
-  return `<div class="hdr"><h1>Mis listas</h1>${syncBadge()}</div><button class="btn" data-a="newlist">+ Nueva lista</button><div id="cards">${cardsHtml()}</div>`;
+  return `<div class="bar"><h1>Mis listas</h1>${syncBadge()}</div><div id="cards">${cardsHtml()}</div><button class="btn newbtn" data-a="newlist">+ Nueva lista</button>`;
 }
 function paintCards() { const el = $('#cards'); if (el) el.innerHTML = cardsHtml(); }
 
@@ -341,10 +340,12 @@ function repaint() { if (view === 'home') paintHome(); else if (view === 'list')
 
 function vSet() {
   const n = lists().length;
-  return `<div class="hdr"><h1>Ajustes</h1>${syncBadge()}</div>
+  return `<div class="bar"><h1>Ajustes</h1>${syncBadge()}</div>
 <h3>Cuenta</h3>
 <div class="set-row"><span class="mut">Sesión</span><span>${esc(S.email)}</span></div>
+<div class="set-row"><span class="mut">Cómo te llamamos</span><span>${esc(D().name || '—')}</span></div>
 <div class="set-row"><span class="mut">Listas</span><span>${n}</span></div>
+<button class="sb" data-a="editname">Cambiar mi nombre</button>
 <button class="sb" data-a="syncnow">Sincronizar ahora</button>
 ${installEvt ? '<button class="sb" data-a="install">Instalar la app</button>' : '<p class="mut small">Para instalarla: en Android, menú del navegador → <i>Instalar app</i>. En iPhone, Safari → Compartir → <i>Agregar a inicio</i>.</p>'}
 <h3>Datos</h3>
@@ -357,7 +358,7 @@ ${installEvt ? '<button class="sb" data-a="install">Instalar la app</button>' : 
 
 /* Barra flotante: pestañas + acceso rápido a la última lista. */
 function paintNav() {
-  document.querySelectorAll('#nv nav .nb').forEach(b => (b.dataset.t === view ? b.setAttribute('aria-current', 'page') : b.removeAttribute('aria-current')));
+  document.querySelectorAll('#nv .nb[data-t]').forEach(b => (b.dataset.t === view ? b.setAttribute('aria-current', 'page') : b.removeAttribute('aria-current')));
   const b = $('#nl'); if (!b) return;
   const l = destList();
   b.hidden = !l;
@@ -376,6 +377,7 @@ function sheetHtml() {
   if (s.t === 'rename') return `<form id="sf" class="sh" role="dialog" aria-modal="true" aria-label="Renombrar lista"><h2>Renombrar lista</h2><input id="sn" class="in" type="text" maxlength="80" value="${esc(curList()?.n || '')}" autocomplete="off" aria-label="Nombre de la lista"><button class="btn" type="submit" style="margin-top:14px">Guardar</button><button class="btn ghost" type="button" data-a="close">Cancelar</button></form>`;
   if (s.t === 'item') { const i = activeList()?.items[s.id]; if (!i) return '';
     return `<form id="sf" class="sh" role="dialog" aria-modal="true" aria-label="Editar producto"><h2>Editar producto</h2><input id="sn" class="in" type="text" maxlength="120" value="${esc(i.n)}" autocomplete="off" aria-label="Nombre del producto"><div class="step"><span>Cantidad</span><span style="display:flex;align-items:center;gap:12px"><button type="button" data-a="qm" aria-label="Menos">−</button><b id="sq">${i.q}</b><button type="button" data-a="qp" aria-label="Más">+</button></span></div><button class="btn" type="submit" style="margin-top:18px">Guardar</button><button class="btn danger" type="button" data-a="delitem" data-id="${esc(i.id)}">Eliminar producto</button><button class="btn ghost" type="button" data-a="close">Cancelar</button></form>`; }
+  if (s.t === 'name') return `<form id="sf" class="sh" role="dialog" aria-modal="true" aria-label="Tu nombre"><h2>¿Cómo te llamamos?</h2><input id="sn" class="in" type="text" maxlength="30" value="${esc(D().name || '')}" placeholder="Tu nombre o apodo" autocomplete="off" autocapitalize="words" aria-label="Tu nombre"><button class="btn" type="submit" style="margin-top:14px">Guardar</button><button class="btn ghost" type="button" data-a="close">Cancelar</button></form>`;
   if (s.t === 'pick') { const L = lists(), d = destList();
     return `<div class="sh" role="dialog" aria-modal="true" aria-label="Agregar a otra lista"><h2>Agregar a…</h2>${L.map(l => `<button class="rowb" data-a="setdest" data-id="${esc(l.id)}"><span>${esc(l.n)}</span>${d && l.id === d.id ? '<span class="ck" aria-label="Lista elegida">✓</span>' : ''}</button>`).join('')}<button class="rowb" data-a="newlist" style="color:var(--acc);font-weight:700">+ Nueva lista</button></div>`; }
   if (s.t === 'switch') { const L = lists();
@@ -452,7 +454,12 @@ async function doAuth() {
     const r = await api('/' + authMode, { method: 'POST', body: JSON.stringify({ email: em, password: pw }) });
     if (S.email && S.email !== em) { S.data = emptyState(); S.dirty = false; }
     S.email = em; S.token = r.token; authPass = ''; save();
-    if (authMode === 'signup') S.dirty = true;
+    if (authMode === 'signup') {
+      S.dirty = true;
+      const nm = authName.trim().slice(0, 30);
+      if (nm) { D().name = nm; D().nameU = now(); }
+      save();
+    }
     await sync();
     busy = false; go('home');
     return;
@@ -462,7 +469,7 @@ async function doAuth() {
 async function logout() {
   if (S.dirty) { toast('Sincronizando antes de salir…'); await sync(); }
   if (S.dirty) { closeSheet(); toast('Hay cambios sin subir. Conectate e intentá de nuevo.'); return; }
-  wipeLocal(true); authEmail = S.email; authPass = ''; authErr = ''; go('auth');
+  wipeLocal(true); authEmail = S.email; authPass = ''; authName = ''; authErr = ''; go('auth');
 }
 async function deleteAccount() {
   try { await api('/account', { method: 'DELETE' }); }
@@ -486,12 +493,12 @@ const A = {
   lists() { go('lists'); },
   open(b) { openList(b.dataset.id); },
   lastlist() { openDest(); },
-  opendest() { openDest(); },
   pick() { openSheet(lists().length ? { t: 'pick' } : { t: 'newlist' }); },
   setdest(b) { setLast(b.dataset.id); closeSheet(); repaint(); },
   aqm() { addQty = Math.max(1, addQty - 1); syncStep(); },
   aqp() { addQty = Math.min(99, addQty + 1); syncStep(); },
   newlist() { openSheet({ t: 'newlist' }); },
+  editname() { openSheet({ t: 'name' }); },
   switch() { openSheet({ t: 'switch' }); },
   lmenu() { openSheet({ t: 'lmenu' }); },
   rename() { openSheet({ t: 'rename' }); },
@@ -537,6 +544,7 @@ document.addEventListener('submit', e => {
       const nid = newList(val); closeSheet();
       if (view === 'home') { setLast(nid); repaint(); } else openList(nid);
     } else if (sheet.t === 'rename') { renameList(val); closeSheet(); paintList(); }
+    else if (sheet.t === 'name') { D().name = val.trim().slice(0, 30); D().nameU = now(); touch(); closeSheet(); render(); }
     else if (sheet.t === 'item') {
       const i = activeList()?.items[sheet.id];
       const n = val.trim().slice(0, 120);
@@ -549,7 +557,8 @@ document.addEventListener('input', e => {
   const t = e.target;
   if (t.id === 'qi') paintSug();
   const au = t.dataset && t.dataset.au;
-  if (au === 'email') authEmail = t.value;
+  if (au === 'name') authName = t.value;
+  else if (au === 'email') authEmail = t.value;
   else if (au === 'pass') authPass = t.value;
 });
 document.addEventListener('keydown', e => { if (e.key === 'Escape' && sheet) closeSheet(); });

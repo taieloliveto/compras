@@ -2,12 +2,12 @@
 
 App personal para crear y gestionar varias listas de compras. PWA instalable, funciona sin conexión y sincroniza tus listas entre dispositivos con una cuenta (email + contraseña).
 
-- **Home con carga rápida**: al abrir la app ves un campo para sumar productos a la última lista que usaste. Escribís y Enter; varios juntos (`leche, 2 pan, queso x3`); sugerencias de lo que más comprás con un toque. También podés elegir la **cantidad antes de agregar** (selector − / +). Si repetís un producto, suma la cantidad en vez de duplicarlo.
-- **Barra flotante**: Home, Listas y Ajustes, y aparte un acceso rápido a la última lista abierta.
-- **Listas**: crear, renombrar, duplicar, desmarcar todo, vaciar comprados y eliminar. Lo marcado baja a "En el carrito"; eliminar tiene "Deshacer".
+- **Home**: saludo "Hola *tu nombre*" y "¿Qué vas a agregar hoy?", con el formulario centrado: campo de texto, cantidad (− / +), selector de lista y botón Agregar. Podés cargar varios juntos (`leche, 2 pan, queso x3`) y tocar sugerencias. Al agregar aparece un aviso con "Ver lista". Si repetís un producto, suma la cantidad.
+- **Nombre**: se pide al crear la cuenta ("¿Cómo te gustaría que te llamen?") y se cambia en Ajustes. Viaja con la cuenta a todos tus dispositivos.
+- **Barra flotante**: Home, Listas y la última lista abierta (acceso rápido) juntas; Ajustes en su propio botón a la derecha. La barra superior queda fija arriba.
+- **Mis listas**: ver y gestionar las listas; el botón "+ Nueva lista" está al final. Dentro de cada lista: renombrar, duplicar, desmarcar todo, vaciar comprados y eliminar.
 - **Ventanas flotantes y centradas**; el teclado solo se abre cuando tocás un campo (salvo al crear una lista nueva).
-- **Nube**: cuentas con sesión de 60 días; si editás desde dos dispositivos los cambios se combinan producto por producto.
-- **Offline**: abre y se edita sin conexión; sube los cambios cuando vuelve.
+- **Nube y offline**: sesión de 60 días; los cambios de dos dispositivos se combinan producto por producto; funciona sin conexión.
 
 ## Cómo está armado
 
