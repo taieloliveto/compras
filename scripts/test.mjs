@@ -61,6 +61,20 @@ await ok('el nombre se resuelve por fecha y se recorta', () => {
   assert.equal(mergeState({ name: '' , nameU: 0 }, { name: 'Tai', nameU: 5 }).name, 'Tai');
   assert.equal(sanitizeState({ name: '  ' + 'x'.repeat(80) }).name.length, 30);
 });
+await ok('el emoji de la lista se conserva, se limita a uno y se sincroniza', () => {
+  const e = x => sanitizeState({ lists: { a: { n: 'x', e: x } } }).lists.a.e;
+  assert.equal(e('🛒'), '🛒');
+  assert.equal(e(' 🥦 '), '🥦');
+  assert.equal(e('🛒🥦'), '🛒', 'solo el primero');
+  assert.equal(e('👨‍👩‍👧'), '👨‍👩‍👧', 'las secuencias con ZWJ cuentan como uno');
+  assert.equal(e('🇦🇷'), '🇦🇷', 'banderas');
+  assert.equal(e('1️⃣'), '1️⃣', 'teclas');
+  for (const bad of ['abc', '1', '#', 'a🛒', '', null, 7, 'x'.repeat(40)]) assert.equal(e(bad), '', String(bad));
+  const a = { lists: { l1: L('l1', 'S', {}, 1, { e: '🛒' }) } }, b = { lists: { l1: L('l1', 'S', {}, 2, { e: '🍎' }) } };
+  assert.equal(mergeState(a, b).lists.l1.e, '🍎', 'gana el cambio más reciente');
+  assert.equal(mergeState(b, a).lists.l1.e, '🍎');
+  assert.equal(sanitizeState({ lists: { a: { n: 'x' } } }).lists.a.e, '', 'datos viejos sin emoji');
+});
 await ok('el catálogo de frecuentes se une', () => {
   const m = mergeState({ cat: { leche: { n: 'Leche', c: 3, u: 5 } } }, { cat: { pan: { n: 'Pan', c: 1, u: 1 } } });
   assert.deepEqual(Object.keys(m.cat).sort(), ['leche', 'pan']);

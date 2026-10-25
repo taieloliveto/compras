@@ -114,6 +114,22 @@ await step('Home: todo centrado y con el orden texto → cantidad → selector d
   assert.ok(Math.abs(gapTop - gapBottom) < 60, `bloque centrado en vertical (arriba ${Math.round(gapTop)} / abajo ${Math.round(gapBottom)})`);
   await a.screenshot({ path: join(SHOTS, '2a-home-vacio.png') });
 });
+await step('Home: fondo de íconos con degradé, detrás del texto y solo en Home', async () => {
+  const bg = await a.evaluate(async () => {
+    const hb = document.querySelector('.hbg'), i = hb && hb.querySelector('i');
+    const cs = getComputedStyle(hb), ci = getComputedStyle(i);
+    const img = await fetch('img/pattern.png');
+    const hi = document.querySelector('#hi').getBoundingClientRect();
+    const top = document.elementFromPoint(hi.x + hi.width / 2, hi.y + hi.height / 2);
+    return { grad: (cs.maskImage || cs.webkitMaskImage || ''), pat: (ci.maskImage || ci.webkitMaskImage || ''), status: img.status, type: img.headers.get('content-type'), h: hb.getBoundingClientRect().height, pos: cs.position, textOnTop: !!top && !!top.closest('#hi'), safari: ci.webkitMaskImage || '' };
+  });
+  assert.match(bg.grad, /linear-gradient/, 'el fondo se desvanece con un degradé');
+  assert.match(bg.pat, /pattern\.png/, 'usa el patrón de íconos');
+  assert.equal(bg.status, 200); assert.match(bg.type, /image\/png/);
+  assert.ok(bg.h > 300 && bg.h < 500, 'ocupa la parte de arriba (alto ' + bg.h + ')');
+  assert.ok(bg.textOnTop, 'el saludo queda por encima del fondo');
+  await a.screenshot({ path: join(SHOTS, '2c-home-fondo.png') });
+});
 await step('la barra: Home, Listas y la última lista juntas; Ajustes aparte a la derecha', async () => {
   await a.fill('#qi', 'Fideos'); await a.keyboard.press('Enter');          // crea "Mi lista"
   await a.locator('#nl').waitFor();
@@ -314,12 +330,89 @@ await step('la barra flotante entra en una pantalla de 320 px', async () => {
   await b.setViewportSize({ width: 390, height: 844 });
 });
 
+console.log('emoji en las listas');
+await step('crear lista con emoji aparte: se elige con un toque, el foco queda en el nombre', async () => {
+  await goTab(a, 'lists');
+  await a.getByRole('button', { name: '+ Nueva lista' }).click();
+  await a.locator('.sh').waitFor();
+  assert.equal(await a.locator('#se').count(), 1, 'hay un campo de emoji aparte del nombre');
+  const [se, sn] = [await a.locator('#se').boundingBox(), await a.locator('#sn').boundingBox()];
+  assert.ok(se.x + se.width <= sn.x + 1 && Math.abs(se.y - sn.y) < 12, 'emoji a la izquierda del nombre, en la misma fila');
+  await a.locator('.egrid button[data-e="🥦"]').click();
+  assert.equal(await a.inputValue('#se'), '🥦');
+  assert.equal(await a.locator('.egrid button[data-e="🥦"]').getAttribute('aria-pressed'), 'true');
+  assert.equal(await activeTag(a), 'sn', 'tocar un emoji no cambia el foco');
+  await a.screenshot({ path: join(SHOTS, '9-nueva-lista-emoji.png') });
+  await a.fill('#sn', 'Verdulería'); await a.keyboard.press('Enter');
+  await a.locator('#lt').filter({ hasText: 'Verdulería' }).waitFor();
+});
+await step('el emoji se ve delante del nombre en el encabezado, la barra, Home y la lista de listas', async () => {
+  assert.equal((await a.locator('#lt .em').textContent()).trim(), '🥦');
+  assert.equal(await a.locator('#nl-e').textContent(), '🥦');
+  assert.equal(await a.locator('#nl-e').isVisible(), true);
+  assert.equal(await a.locator('#nl svg').isHidden(), true, 'el emoji reemplaza al ícono de la barra');
+  assert.equal((await a.locator('#nl-n').textContent()).trim(), 'Verdulería');
+  await a.locator('.ttl').click();
+  assert.match(await a.locator('.sh .rowb', { hasText: 'Verdulería' }).textContent(), /🥦\s*Verdulería/);
+  await a.keyboard.press('Escape');
+  await goTab(a, 'lists');
+  assert.equal((await a.locator('.card', { hasText: 'Verdulería' }).locator('.em').textContent()).trim(), '🥦');
+  assert.equal(await a.locator('.card', { hasText: 'Súper' }).locator('.em').count(), 0, 'las listas sin emoji no muestran nada raro');
+  await a.screenshot({ path: join(SHOTS, '9b-listas-emoji.png') });
+  await goTab(a, 'home');
+  assert.match(await a.locator('#dest').textContent(), /🥦\s*Verdulería/);
+  await a.fill('#qi', 'zanahoria'); await a.keyboard.press('Enter');
+  await toastHas(a, '“Zanahoria” agregado a 🥦 Verdulería');
+  await a.screenshot({ path: join(SHOTS, '9c-home-emoji.png') });
+});
+await step('editar la lista: el emoji se cambia aparte, sin abrir el teclado, y solo admite emojis', async () => {
+  await a.locator('#nl').click();
+  await a.locator('#lt').filter({ hasText: 'Verdulería' }).waitFor();
+  await a.locator('[aria-label="Opciones de la lista"]').click();
+  await a.getByRole('button', { name: 'Editar nombre y emoji' }).click();
+  await a.locator('.sh').waitFor(); await a.waitForTimeout(300);
+  assert.equal(await a.inputValue('#se'), '🥦');
+  assert.equal(await a.inputValue('#sn'), 'Verdulería');
+  assert.notEqual(await a.evaluate(() => document.activeElement.tagName), 'INPUT', 'no abre el teclado solo');
+  await a.fill('#se', 'abc'); assert.equal(await a.inputValue('#se'), '', 'las letras no entran como emoji');
+  await a.fill('#se', '🥦🍐'); assert.equal(await a.inputValue('#se'), '🍐', 'si escribís otro, reemplaza al anterior');
+  await a.fill('#sn', 'Verdu'); await a.locator('#sf button[type=submit]').click();
+  await a.locator('#lt').filter({ hasText: 'Verdu' }).waitFor();
+  assert.equal((await a.locator('#lt .em').textContent()).trim(), '🍐');
+  assert.equal(await a.locator('#nl-e').textContent(), '🍐');
+});
+await step('quitar el emoji vuelve a mostrar el ícono; se puede dejar otro y el nombre original', async () => {
+  await a.locator('[aria-label="Opciones de la lista"]').click();
+  await a.getByRole('button', { name: 'Editar nombre y emoji' }).click();
+  await a.locator('.egrid .noemo').click();
+  assert.equal(await a.inputValue('#se'), '');
+  await a.locator('#sf button[type=submit]').click();
+  await a.locator('#lt').filter({ hasText: 'Verdu' }).waitFor();
+  assert.equal(await a.locator('#lt .em').count(), 0);
+  assert.equal(await a.locator('#nl svg').isVisible(), true, 'vuelve el ícono de la barra');
+  assert.equal(await a.locator('#nl-e').isHidden(), true);
+  await a.locator('[aria-label="Opciones de la lista"]').click();
+  await a.getByRole('button', { name: 'Editar nombre y emoji' }).click();
+  await a.fill('#se', '🥬'); await a.fill('#sn', 'Verdulería'); await a.locator('#sf button[type=submit]').click();
+  await a.locator('#lt').filter({ hasText: 'Verdulería' }).waitFor();
+  assert.equal((await a.locator('#lt .em').textContent()).trim(), '🥬');
+  await settle(a);
+});
+await step('B recibe la lista con su emoji', async () => {
+  await b.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
+  await goTab(b, 'lists');
+  await b.locator('.card', { hasText: 'Verdulería' }).locator('.em').waitFor({ timeout: 8000 });
+  assert.equal((await b.locator('.card', { hasText: 'Verdulería' }).locator('.em').textContent()).trim(), '🥬');
+  await b.screenshot({ path: join(SHOTS, '9d-B-listas-emoji.png') });
+});
+
 console.log('ajustes y sesión');
 await step('exportar descarga un JSON', async () => {
   await goTab(a, 'set');
   const [dl] = await Promise.all([a.waitForEvent('download'), a.getByRole('button', { name: /Exportar/ }).click()]);
   const j = JSON.parse(readFileSync(await dl.path(), 'utf8'));
-  assert.deepEqual(j.listas.map(l => l.nombre).sort(), ['Mi lista', 'Súper']);
+  assert.deepEqual(j.listas.map(l => l.nombre).sort(), ['Mi lista', 'Súper', 'Verdulería']);
+  assert.equal(j.listas.find(l => l.nombre === 'Verdulería').emoji, '🥬');
 });
 await step('cerrar sesión borra los datos locales y al volver a ingresar recupera el nombre', async () => {
   await a.getByRole('button', { name: 'Cerrar sesión' }).click();

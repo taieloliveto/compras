@@ -9,6 +9,18 @@ const str = (s, n) => typeof s === 'string' ? s.slice(0, n) : '';
 const num = x => Number.isFinite(+x) ? +x : 0;
 const norm = s => String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/\s+/g, ' ').trim();
 
+/* Emoji de una lista: un solo carácter emoji (banderas, familias y teclas incluidas) o vacío. */
+const EMO = /\p{Extended_Pictographic}|\p{Regional_Indicator}|[#*0-9]\uFE0F?\u20E3/u;
+const isEmoji = g => typeof g === 'string' && g.length > 0 && g.length <= 16 && EMO.test(g);
+function firstEmoji(s) {
+  s = typeof s === 'string' ? s.trim() : '';
+  if (!s) return '';
+  let g;
+  try { const it = new Intl.Segmenter(undefined, { granularity: 'grapheme' }).segment(s)[Symbol.iterator]().next(); g = it.done ? '' : it.value.segment; }
+  catch (_) { g = Array.from(s)[0] || ''; }
+  return isEmoji(g) ? g : '';
+}
+
 function emptyState() { return { lists: {}, cat: {}, last: '', lastU: 0, name: '', nameU: 0 }; }
 
 /* Limpia y acota cualquier dato que venga de afuera (disco, red, otro dispositivo). */
@@ -23,7 +35,7 @@ function sanitizeState(d, now) {
     if (!idOk(id) || !l || typeof l !== 'object') continue;
     const del = !!l.del, u = num(l.u);
     if (del && u < now - TOMB_TTL) continue;
-    const nl = { id, n: str(l.n, 80) || 'Lista', c: num(l.c), u, del, items: {} };
+    const nl = { id, n: str(l.n, 80) || 'Lista', e: firstEmoji(l.e), c: num(l.c), u, del, items: {} };
     if (!del && l.items && typeof l.items === 'object') {
       for (const iid of Object.keys(l.items).slice(0, MAXI)) {
         const it = l.items[iid];

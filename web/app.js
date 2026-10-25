@@ -1,12 +1,22 @@
 'use strict';
 /* Compras — app de listas de compras (PWA). Usa merge.js (global: mergeState, sanitizeState, emptyState, norm). */
 (() => {
-const VERSION = '1.2.0';
+const VERSION = '1.3.0';
 const CFG = window.COMPRAS_CONFIG || {};
 const KEY = 'compras.v1';
 const $ = s => document.querySelector(s);
 const esc = t => String(t ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const now = () => Date.now();
+/* Nombre de lista con su emoji: html (con el emoji aparte, para darle estilo) y texto plano. */
+const lh = l => `${l.e ? `<span class="em" aria-hidden="true">${esc(l.e)}</span>` : ''}${esc(l.n)}`;
+const lt = l => (l.e ? l.e + ' ' : '') + l.n;
+const EMOS = ['🛒', '🥦', '🍎', '🥩', '🥖', '🧀', '🥛', '🍷', '☕', '🍕', '🧁', '🧴', '🧽', '💊', '🐶', '🏠', '🎁', '🔧'];
+function lastEmoji(s) {
+  let out = '';
+  try { for (const g of new Intl.Segmenter(undefined, { granularity: 'grapheme' }).segment(String(s))) if (isEmoji(g.segment)) out = g.segment; }
+  catch (_) { out = firstEmoji(Array.from(String(s)).pop() || ''); }
+  return out;
+}
 let seq = 0;
 const uid = () => Math.random().toString(36).slice(2, 8) + now().toString(36);
 const stamp = () => now() + (++seq % 1000) / 1000;
@@ -155,7 +165,7 @@ function addText(text) {
     touch();
     if (view === 'home') {
       const lid = l.id;
-      toast(n === 1 ? `“${entries[0].n}” agregado a ${l.n}` : `${n} productos agregados a ${l.n}`, 'Ver lista', () => openList(lid));
+      toast(n === 1 ? `“${entries[0].n}” agregado a ${lt(l)}` : `${n} productos agregados a ${lt(l)}`, 'Ver lista', () => openList(lid));
     }
   }
   return n;
@@ -195,23 +205,23 @@ function uncheckAll() {
   doneOf(l).forEach(i => { i.d = false; i.u = t; });
   touch(); paintList();
 }
-function newList(name) {
+function newList(name, emoji) {
   const t = now(), id = uid();
   const n = (name || '').trim().slice(0, 80) || `Lista ${lists().length + 1}`;
-  D().lists[id] = { id, n, c: stamp(), u: t, del: false, items: {} };
+  D().lists[id] = { id, n, e: firstEmoji(emoji), c: stamp(), u: t, del: false, items: {} };
   touch();
   return id;
 }
-function renameList(name) {
+function renameList(name, emoji) {
   const l = curList(); if (!l) return;
   const n = (name || '').trim().slice(0, 80);
-  if (!n) return;
-  l.n = n; l.u = now(); touch();
+  if (n) l.n = n;
+  l.e = firstEmoji(emoji); l.u = now(); touch();
 }
 function duplicateList() {
   const l = curList(); if (!l) return;
   const id = uid(), t = now();
-  const copy = { id, n: (l.n + ' (copia)').slice(0, 80), c: stamp(), u: t, del: false, items: {} };
+  const copy = { id, n: (l.n + ' (copia)').slice(0, 80), e: l.e || '', c: stamp(), u: t, del: false, items: {} };
   for (const i of itemsOf(l)) { const iid = uid(); copy.items[iid] = { id: iid, n: i.n, q: i.q, d: false, c: stamp(), u: t, del: false }; }
   D().lists[id] = copy; touch();
   return id;
@@ -270,7 +280,8 @@ ${CFG.API_URL ? '' : `<label class="f">URL del servidor<input type="url" data-au
 
 /* Home: lo primero que ves. Un campo para sumar productos a la última lista usada. */
 function vHome() {
-  return `<div class="bar"><span></span>${syncBadge()}</div>
+  return `<div class="hbg" aria-hidden="true"><i></i></div>
+<div class="bar clear"><span></span>${syncBadge()}</div>
 <section class="homec">
 <h1 id="hi"></h1>
 <p class="ask">¿Qué vas a agregar hoy?</p>
@@ -286,7 +297,7 @@ function paintHome() {
   const el = $('#dest'); if (!el) return;
   const l = destList();
   $('#hi').textContent = D().name ? `Hola ${D().name} 👋` : 'Hola 👋';
-  el.innerHTML = l ? `<b>${esc(l.n)}</b><span aria-hidden="true">▾</span>` : '<span class="mut">Lista nueva</span><span aria-hidden="true">▾</span>';
+  el.innerHTML = l ? `<b>${lh(l)}</b><span aria-hidden="true">▾</span>` : '<span class="mut">Lista nueva</span><span aria-hidden="true">▾</span>';
   paintSug();
 }
 
@@ -297,7 +308,7 @@ function listStats(l) {
 function cardHtml(l) {
   const s = listStats(l);
   const sub = !s.total ? 'Vacía' : s.left === 0 ? 'Todo comprado ✓' : `${s.left} por comprar · ${s.total} en total`;
-  return `<button class="card" data-a="open" data-id="${esc(l.id)}"><b>${esc(l.n)}${D().last === l.id ? '<span class="tag">Última</span>' : ''}</b><small>${sub}</small>${s.total ? `<div class="pbar" aria-hidden="true"><i style="width:${Math.round(s.done / s.total * 100)}%"></i></div>` : ''}</button>`;
+  return `<button class="card" data-a="open" data-id="${esc(l.id)}"><b>${lh(l)}${D().last === l.id ? '<span class="tag">Última</span>' : ''}</b><small>${sub}</small>${s.total ? `<div class="pbar" aria-hidden="true"><i style="width:${Math.round(s.done / s.total * 100)}%"></i></div>` : ''}</button>`;
 }
 function cardsHtml() {
   const L = lists();
@@ -320,7 +331,7 @@ function rowHtml(i) {
 function paintList() {
   const l = curList(); if (!l) return;
   const p = pendingOf(l), d = doneOf(l);
-  $('#lt').textContent = l.n;
+  $('#lt').innerHTML = lh(l);
   $('#ls').textContent = !p.length && !d.length ? 'Lista vacía' : p.length ? `${p.length} por comprar` : 'Todo comprado';
   let h = '';
   if (!p.length && !d.length) h = `<div class="empty"><div class="big" aria-hidden="true">📝</div><p class="mut">Escribí arriba lo que necesitás.<br>Podés poner varios separados por coma: <i>leche, pan, 2 huevos</i></p></div>`;
@@ -364,7 +375,9 @@ function paintNav() {
   b.hidden = !l;
   if (l) {
     $('#nl-n').textContent = l.n;
-    b.setAttribute('aria-label', `Abrir la lista ${l.n}`);
+    const ne = $('#nl-e'); ne.textContent = l.e || ''; ne.hidden = !l.e;
+    b.classList.toggle('has-e', !!l.e);
+    b.setAttribute('aria-label', `Abrir la lista ${lt(l)}`);
     if (view === 'list') b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current');
   }
 }
@@ -373,16 +386,16 @@ function paintNav() {
 function sheetHtml() {
   const s = sheet; if (!s) return '';
   if (s.t === 'ask') return `<div class="sh" role="dialog" aria-modal="true" aria-label="${esc(s.msg)}"><h2>${esc(s.msg)}</h2>${s.sub ? `<p class="mut">${esc(s.sub)}</p>` : ''}<button class="btn" data-a="yes">${esc(s.yes || 'Sí, eliminar')}</button><button class="btn ghost" data-a="close">Cancelar</button></div>`;
-  if (s.t === 'newlist') return `<form id="sf" class="sh" role="dialog" aria-modal="true" aria-label="Nueva lista"><h2>Nueva lista</h2><input id="sn" class="in" type="text" maxlength="80" placeholder="Nombre (ej: Súper, Verdulería)" autocomplete="off" aria-label="Nombre de la lista"><button class="btn" type="submit" style="margin-top:14px">Crear lista</button><button class="btn ghost" type="button" data-a="close">Cancelar</button></form>`;
-  if (s.t === 'rename') return `<form id="sf" class="sh" role="dialog" aria-modal="true" aria-label="Renombrar lista"><h2>Renombrar lista</h2><input id="sn" class="in" type="text" maxlength="80" value="${esc(curList()?.n || '')}" autocomplete="off" aria-label="Nombre de la lista"><button class="btn" type="submit" style="margin-top:14px">Guardar</button><button class="btn ghost" type="button" data-a="close">Cancelar</button></form>`;
+  if (s.t === 'newlist') return listForm('Nueva lista', '', '', 'Crear lista', 'Nombre de la lista');
+  if (s.t === 'rename') return listForm('Editar lista', curList()?.n || '', curList()?.e || '', 'Guardar', '');
   if (s.t === 'item') { const i = activeList()?.items[s.id]; if (!i) return '';
     return `<form id="sf" class="sh" role="dialog" aria-modal="true" aria-label="Editar producto"><h2>Editar producto</h2><input id="sn" class="in" type="text" maxlength="120" value="${esc(i.n)}" autocomplete="off" aria-label="Nombre del producto"><div class="step"><span>Cantidad</span><span style="display:flex;align-items:center;gap:12px"><button type="button" data-a="qm" aria-label="Menos">−</button><b id="sq">${i.q}</b><button type="button" data-a="qp" aria-label="Más">+</button></span></div><button class="btn" type="submit" style="margin-top:18px">Guardar</button><button class="btn danger" type="button" data-a="delitem" data-id="${esc(i.id)}">Eliminar producto</button><button class="btn ghost" type="button" data-a="close">Cancelar</button></form>`; }
   if (s.t === 'name') return `<form id="sf" class="sh" role="dialog" aria-modal="true" aria-label="Tu nombre"><h2>¿Cómo te llamamos?</h2><input id="sn" class="in" type="text" maxlength="30" value="${esc(D().name || '')}" placeholder="Tu nombre o apodo" autocomplete="off" autocapitalize="words" aria-label="Tu nombre"><button class="btn" type="submit" style="margin-top:14px">Guardar</button><button class="btn ghost" type="button" data-a="close">Cancelar</button></form>`;
   if (s.t === 'pick') { const L = lists(), d = destList();
-    return `<div class="sh" role="dialog" aria-modal="true" aria-label="Agregar a otra lista"><h2>Agregar a…</h2>${L.map(l => `<button class="rowb" data-a="setdest" data-id="${esc(l.id)}"><span>${esc(l.n)}</span>${d && l.id === d.id ? '<span class="ck" aria-label="Lista elegida">✓</span>' : ''}</button>`).join('')}<button class="rowb" data-a="newlist" style="color:var(--acc);font-weight:700">+ Nueva lista</button></div>`; }
+    return `<div class="sh" role="dialog" aria-modal="true" aria-label="Agregar a otra lista"><h2>Agregar a…</h2>${L.map(l => `<button class="rowb" data-a="setdest" data-id="${esc(l.id)}"><span>${lh(l)}</span>${d && l.id === d.id ? '<span class="ck" aria-label="Lista elegida">✓</span>' : ''}</button>`).join('')}<button class="rowb" data-a="newlist" style="color:var(--acc);font-weight:700">+ Nueva lista</button></div>`; }
   if (s.t === 'switch') { const L = lists();
-    return `<div class="sh" role="dialog" aria-modal="true" aria-label="Cambiar de lista"><h2>Mis listas</h2>${L.map(l => `<button class="rowb" data-a="open" data-id="${esc(l.id)}"><span>${esc(l.n)}</span>${l.id === cur ? '<span class="ck" aria-label="Lista actual">✓</span>' : ''}</button>`).join('')}<button class="rowb" data-a="newlist" style="color:var(--acc);font-weight:700">+ Nueva lista</button></div>`; }
-  if (s.t === 'lmenu') return `<div class="sh" role="dialog" aria-modal="true" aria-label="Opciones de la lista"><h2>${esc(curList()?.n || 'Lista')}</h2><button class="rowb" data-a="rename">Renombrar</button><button class="rowb" data-a="dup">Duplicar (sin marcar)</button><button class="rowb" data-a="unall2">Desmarcar todo</button><button class="rowb" data-a="cleardone2">Vaciar comprados</button><button class="rowb dng" data-a="dellist">Eliminar lista</button></div>`;
+    return `<div class="sh" role="dialog" aria-modal="true" aria-label="Cambiar de lista"><h2>Mis listas</h2>${L.map(l => `<button class="rowb" data-a="open" data-id="${esc(l.id)}"><span>${lh(l)}</span>${l.id === cur ? '<span class="ck" aria-label="Lista actual">✓</span>' : ''}</button>`).join('')}<button class="rowb" data-a="newlist" style="color:var(--acc);font-weight:700">+ Nueva lista</button></div>`; }
+  if (s.t === 'lmenu') return `<div class="sh" role="dialog" aria-modal="true" aria-label="Opciones de la lista"><h2>${curList() ? lh(curList()) : 'Lista'}</h2><button class="rowb" data-a="rename">Editar nombre y emoji</button><button class="rowb" data-a="dup">Duplicar (sin marcar)</button><button class="rowb" data-a="unall2">Desmarcar todo</button><button class="rowb" data-a="cleardone2">Vaciar comprados</button><button class="rowb dng" data-a="dellist">Eliminar lista</button></div>`;
   return '';
 }
 function renderSheet() {
@@ -400,6 +413,16 @@ function renderSheet() {
   const f = d.querySelector('#sn');
   if (f && sheet.t === 'newlist') f.focus();
   else { d.tabIndex = -1; d.focus({ preventScroll: true }); }
+}
+function listForm(title, name, emoji, btn, ph) {
+  return `<form id="sf" class="sh" role="dialog" aria-modal="true" aria-label="${title}"><h2>${title}</h2>
+<div class="erow"><input id="se" class="in emo" type="text" value="${esc(emoji)}" placeholder="🙂" maxlength="16" autocomplete="off" aria-label="Emoji de la lista"><input id="sn" class="in" type="text" maxlength="80" value="${esc(name)}"${ph ? ` placeholder="${esc(ph)}"` : ''} autocomplete="off" aria-label="Nombre de la lista"></div>
+<div class="egrid" role="group" aria-label="Emojis sugeridos">${EMOS.map(x => `<button type="button" data-a="pe" data-e="${x}" aria-label="Emoji ${x}" aria-pressed="${x === emoji}">${x}</button>`).join('')}<button type="button" class="noemo" data-a="pe" data-e="" aria-label="Sin emoji">✕</button></div>
+<button class="btn" type="submit" style="margin-top:14px">${btn}</button><button class="btn ghost" type="button" data-a="close">Cancelar</button></form>`;
+}
+function markEmo() {
+  const v = ($('#se') || {}).value || '';
+  document.querySelectorAll('.egrid button[data-e]').forEach(b => { if (b.dataset.e) b.setAttribute('aria-pressed', String(b.dataset.e === v)); });
 }
 function openSheet(s) { sheet = s; renderSheet(); }
 function closeSheet() { sheet = null; renderSheet(); }
@@ -478,7 +501,7 @@ async function deleteAccount() {
   toast('Cuenta eliminada');
 }
 function exportData() {
-  const out = { exportado: new Date().toISOString(), listas: lists().map(l => ({ nombre: l.n, productos: itemsOf(l).map(i => ({ nombre: i.n, cantidad: i.q, comprado: i.d })) })) };
+  const out = { exportado: new Date().toISOString(), listas: lists().map(l => ({ nombre: l.n, emoji: l.e || '', productos: itemsOf(l).map(i => ({ nombre: i.n, cantidad: i.q, comprado: i.d })) })) };
   const a = document.createElement('a');
   a.href = URL.createObjectURL(new Blob([JSON.stringify(out, null, 2)], { type: 'application/json' }));
   a.download = `compras-${new Date().toISOString().slice(0, 10)}.json`;
@@ -499,13 +522,14 @@ const A = {
   aqp() { addQty = Math.min(99, addQty + 1); syncStep(); },
   newlist() { openSheet({ t: 'newlist' }); },
   editname() { openSheet({ t: 'name' }); },
+  pe(b) { const i = $('#se'); if (i) { i.value = b.dataset.e; markEmo(); } },
   switch() { openSheet({ t: 'switch' }); },
   lmenu() { openSheet({ t: 'lmenu' }); },
   rename() { openSheet({ t: 'rename' }); },
   dup() { const id = duplicateList(); closeSheet(); if (id) { openList(id); toast('Lista duplicada'); } },
   unall2() { closeSheet(); uncheckAll(); },
   cleardone2() { closeSheet(); clearDone(); },
-  dellist() { const l = curList(); if (!l) return; ask(`¿Eliminar “${l.n}”?`, 'Se borra la lista con todos sus productos.', 'Sí, eliminar', () => { deleteList(); go('lists'); }); },
+  dellist() { const l = curList(); if (!l) return; ask(`¿Eliminar “${lt(l)}”?`, 'Se borra la lista con todos sus productos.', 'Sí, eliminar', () => { deleteList(); go('lists'); }); },
   tg(b) { toggle(b.dataset.id); },
   ed(b) { openSheet({ t: 'item', id: b.dataset.id }); },
   qm() { const e = $('#sq'); e.textContent = Math.max(1, +e.textContent - 1); },
@@ -531,7 +555,7 @@ document.addEventListener('click', e => {
   if (b && A[b.dataset.a]) A[b.dataset.a](b);
 });
 /* Los chips y el selector de cantidad no le sacan el foco al campo: el teclado queda abierto para cargar rápido. */
-document.addEventListener('mousedown', e => { if (e.target.closest('.chip, .qs button')) e.preventDefault(); });
+document.addEventListener('mousedown', e => { if (e.target.closest('.chip, .qs button, .egrid button')) e.preventDefault(); });
 document.addEventListener('submit', e => {
   e.preventDefault();
   const id = e.target.id;
@@ -541,9 +565,9 @@ document.addEventListener('submit', e => {
   } else if (id === 'sf' && sheet) {
     const val = ($('#sn') || {}).value || '';
     if (sheet.t === 'newlist') {
-      const nid = newList(val); closeSheet();
+      const nid = newList(val, ($('#se') || {}).value); closeSheet();
       if (view === 'home') { setLast(nid); repaint(); } else openList(nid);
-    } else if (sheet.t === 'rename') { renameList(val); closeSheet(); paintList(); }
+    } else if (sheet.t === 'rename') { renameList(val, ($('#se') || {}).value); closeSheet(); paintList(); }
     else if (sheet.t === 'name') { D().name = val.trim().slice(0, 30); D().nameU = now(); touch(); closeSheet(); render(); }
     else if (sheet.t === 'item') {
       const i = activeList()?.items[sheet.id];
@@ -556,6 +580,7 @@ document.addEventListener('submit', e => {
 document.addEventListener('input', e => {
   const t = e.target;
   if (t.id === 'qi') paintSug();
+  if (t.id === 'se') { t.value = lastEmoji(t.value); markEmo(); }
   const au = t.dataset && t.dataset.au;
   if (au === 'name') authName = t.value;
   else if (au === 'email') authEmail = t.value;

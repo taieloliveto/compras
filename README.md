@@ -5,7 +5,8 @@ App personal para crear y gestionar varias listas de compras. PWA instalable, fu
 - **Home**: saludo "Hola *tu nombre*" y "¿Qué vas a agregar hoy?", con el formulario centrado: campo de texto, cantidad (− / +), selector de lista y botón Agregar. Podés cargar varios juntos (`leche, 2 pan, queso x3`) y tocar sugerencias. Al agregar aparece un aviso con "Ver lista". Si repetís un producto, suma la cantidad.
 - **Nombre**: se pide al crear la cuenta ("¿Cómo te gustaría que te llamen?") y se cambia en Ajustes. Viaja con la cuenta a todos tus dispositivos.
 - **Barra flotante**: Home, Listas y la última lista abierta (acceso rápido) juntas; Ajustes en su propio botón a la derecha. La barra superior queda fija arriba.
-- **Mis listas**: ver y gestionar las listas; el botón "+ Nueva lista" está al final. Dentro de cada lista: renombrar, duplicar, desmarcar todo, vaciar comprados y eliminar.
+- **Fondo de Home**: patrón de íconos de compras que se desvanece hacia abajo (`web/img/pattern.png`). Es solo una máscara, así que el color lo pone el tema claro/oscuro. Para cambiarlo: `python3 -I scripts/make-pattern.py tu-imagen.png`.
+- **Mis listas**: ver y gestionar las listas; el botón "+ Nueva lista" está al final. Cada lista puede tener un **emoji aparte del nombre** (se elige de una grilla o se escribe desde el teclado de emojis) y se ve delante del nombre en todas partes; en la barra flotante reemplaza al ícono. Dentro de cada lista: editar nombre y emoji, duplicar, desmarcar todo, vaciar comprados y eliminar.
 - **Ventanas flotantes y centradas**; el teclado solo se abre cuando tocás un campo (salvo al crear una lista nueva).
 - **Nube y offline**: sesión de 60 días; los cambios de dos dispositivos se combinan producto por producto; funciona sin conexión.
 

@@ -170,3 +170,28 @@ body.nonav #t{bottom:calc(24px + env(safe-area-inset-bottom,0px))}
   #cards{grid-template-columns:1fr 1fr}
 }
 @media(prefers-reduced-motion:reduce){*:not(.boot){animation:none!important;transition:none!important}}
+
+/* Fondo de Home: patrón de íconos que se desvanece hacia abajo (la imagen es solo una máscara: el color lo da el tema) */
+#v{position:relative;z-index:1}
+.hbg{position:fixed;left:0;right:0;top:0;height:min(44vh,420px);z-index:-1;pointer-events:none;
+  -webkit-mask-image:linear-gradient(to bottom,#000 0%,rgba(0,0,0,.75) 28%,rgba(0,0,0,.25) 60%,transparent 92%);
+  mask-image:linear-gradient(to bottom,#000 0%,rgba(0,0,0,.75) 28%,rgba(0,0,0,.25) 60%,transparent 92%)}
+.hbg i{position:absolute;inset:0;background:var(--fg);opacity:.12;
+  -webkit-mask-image:url(img/pattern.png);mask-image:url(img/pattern.png);
+  -webkit-mask-repeat:repeat;mask-repeat:repeat;
+  -webkit-mask-position:center top;mask-position:center top;
+  -webkit-mask-size:max(960px,100vw) auto;mask-size:max(960px,100vw) auto}
+@media(prefers-color-scheme:dark){.hbg i{opacity:.22}}
+.bar.clear{background:none}
+
+/* Emoji de las listas */
+.em{margin-right:.4em}
+.nemo{font-size:1.45rem;line-height:22px;height:22px}
+#nl.has-e svg{display:none}
+.erow{display:flex;gap:10px;align-items:center}
+.erow .in{margin:0}
+.erow .emo{width:64px;flex:none;padding:0;text-align:center;font-size:1.6rem}
+.egrid{display:flex;flex-wrap:wrap;gap:6px;margin:12px 0 2px}
+.egrid button{width:42px;height:42px;border-radius:12px;border:1px solid var(--line);background:var(--card);font-size:1.3rem;line-height:1;padding:0}
+.egrid button[aria-pressed=true]{background:var(--acc-soft);border-color:var(--acc)}
+.egrid .noemo{color:var(--mut);font-size:1rem}
