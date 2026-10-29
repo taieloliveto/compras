@@ -66,7 +66,7 @@ const qty = async (p, scope, name) => { const r = row(p, scope, name); return (a
 const settle = p => p.waitForFunction(() => document.querySelector('.sy')?.textContent === 'Sincronizado', null, { timeout: 8000 });
 const activeTag = p => p.evaluate(() => (document.activeElement && (document.activeElement.id || document.activeElement.tagName)) || '');
 const goTab = (p, t) => p.locator(`#nv [data-t=${t}]`).click();
-const openLast = async p => { await p.locator('#nl').click(); await p.locator('#lt').waitFor(); };
+const openLast = async p => { await goTab(p, 'lists'); await p.locator('.card:has(.tag)').click(); await p.locator('#lt').waitFor(); };
 const openFromLists = async (p, name) => { await goTab(p, 'lists'); await p.locator('.card', { hasText: name }).click(); await p.locator('#lt').filter({ hasText: name }).waitFor(); };
 const toastHas = (p, t) => p.locator('#t', { hasText: t }).waitFor({ timeout: 5000 });
 
@@ -99,7 +99,7 @@ await step('crea la cuenta y abre Home: "Hola Taiel", sin listado, sin teclado',
   await a.getByText('¿Qué vas a agregar hoy?').waitFor();
   assert.equal(await a.locator('#prev').count(), 0, 'no hay listado en Home');
   assert.equal(await a.getByText('Por comprar').count(), 0);
-  assert.equal(await a.locator('#nl').isHidden(), true, 'sin listas no hay acceso rápido');
+  assert.equal(await a.locator('#nl').count(), 0, 'ya no hay acceso rápido a la última lista');
   assert.notEqual(await activeTag(a), 'qi');
 });
 await step('Home: todo centrado y con el orden texto → cantidad → selector de lista → Agregar', async () => {
@@ -130,27 +130,24 @@ await step('Home: fondo de íconos con degradé, detrás del texto y solo en Hom
   assert.ok(bg.textOnTop, 'el saludo queda por encima del fondo');
   await a.screenshot({ path: join(SHOTS, '2c-home-fondo.png') });
 });
-await step('la barra: Home, Listas y la última lista juntas; Ajustes aparte a la derecha', async () => {
+await step('la barra: Home, Listas e Historial juntas; Ajustes aparte a la derecha', async () => {
   await a.fill('#qi', 'Fideos'); await a.keyboard.press('Enter');          // crea "Mi lista"
-  await a.locator('#nl').waitFor();
   const x = async s => (await a.locator(s).boundingBox());
-  const [h, l, n, st] = [await x('#nv [data-t=home]'), await x('#nv [data-t=lists]'), await x('#nl'), await x('#nv > [data-t=set]')];
-  assert.ok(h.x < l.x && l.x < n.x && n.x < st.x, 'orden: Home, Listas, última lista, Ajustes');
-  assert.equal(await a.locator('#nv nav #nl').count(), 1, 'la última lista está dentro de la píldora');
+  const [h, l, n, st] = [await x('#nv [data-t=home]'), await x('#nv [data-t=lists]'), await x('#nv [data-t=hist]'), await x('#nv > [data-t=set]')];
+  assert.ok(h.x < l.x && l.x < n.x && n.x < st.x, 'orden: Home, Listas, Historial, Ajustes');
+  assert.equal(await a.locator('#nv nav [data-t=hist]').count(), 1, 'el historial está dentro de la píldora');
   assert.equal(await a.locator('#nv > [data-t=set]').count(), 1, 'Ajustes está en su propio botón');
   await a.screenshot({ path: join(SHOTS, '2b-barra.png') });
 });
 await step('agregar sin listas crea "Mi lista" y avisa con "Ver lista"', async () => {
   await a.locator('#dest b', { hasText: 'Mi lista' }).waitFor();
   await toastHas(a, '“Fideos” agregado a Mi lista');
-  assert.match(await a.locator('#nl-n').textContent(), /Mi lista/);
 });
 await step('el selector crea otra lista y se queda en Home', async () => {
   await a.locator('#dest').click();
   await a.getByRole('button', { name: '+ Nueva lista' }).click();
   await a.fill('#sn', 'Súper'); await a.keyboard.press('Enter');
   await a.locator('#dest b', { hasText: 'Súper' }).waitFor();
-  assert.match(await a.locator('#nl-n').textContent(), /Súper/);
   await a.getByRole('heading', { name: 'Hola Taiel 👋' }).waitFor();
 });
 await step('cantidad al agregar: el selector se aplica y se reinicia', async () => {
@@ -181,7 +178,6 @@ await step('repetir suma la cantidad; el botón Agregar funciona con un toque', 
 await step('"Ver lista" del aviso y el acceso rápido llevan a la lista con todo lo cargado', async () => {
   await a.locator('#t button', { hasText: 'Ver lista' }).click();
   await a.locator('#lt').filter({ hasText: 'Súper' }).waitFor();
-  assert.equal(await a.locator('#nl').getAttribute('aria-current'), 'page');
   const names = await rowsIn(a, '#items');
   assert.equal(names.filter(x => x === 'Leche').length, 1, 'sin duplicados');
   for (const [n, q] of [['Leche', '×4'], ['Pan', '×2'], ['Sal', '×4'], ['Pan lactal', '×3'], ['Avena', '×2'], ['Arroz', '×3'], ['Tomates', '×1']]) assert.equal(await qty(a, '#items', n), q, n);
@@ -238,7 +234,6 @@ await step('al recargar abre Home con el saludo y la última lista a un toque', 
   await a.reload();
   await a.getByRole('heading', { name: 'Hola Taiel 👋' }).waitFor();
   await a.locator('#dest b', { hasText: 'Súper' }).waitFor();
-  assert.match(await a.locator('#nl-n').textContent(), /Súper/);
 });
 await step('Mis listas: encabezado arriba y botón "Nueva lista" al final', async () => {
   await goTab(a, 'lists');
@@ -348,10 +343,6 @@ await step('crear lista con emoji aparte: se elige con un toque, el foco queda e
 });
 await step('el emoji se ve delante del nombre en el encabezado, la barra, Home y la lista de listas', async () => {
   assert.equal((await a.locator('#lt .em').textContent()).trim(), '🥦');
-  assert.equal(await a.locator('#nl-e').textContent(), '🥦');
-  assert.equal(await a.locator('#nl-e').isVisible(), true);
-  assert.equal(await a.locator('#nl svg').isHidden(), true, 'el emoji reemplaza al ícono de la barra');
-  assert.equal((await a.locator('#nl-n').textContent()).trim(), 'Verdulería');
   await a.locator('.ttl').click();
   assert.match(await a.locator('.sh .rowb', { hasText: 'Verdulería' }).textContent(), /🥦\s*Verdulería/);
   await a.keyboard.press('Escape');
@@ -366,7 +357,7 @@ await step('el emoji se ve delante del nombre en el encabezado, la barra, Home y
   await a.screenshot({ path: join(SHOTS, '9c-home-emoji.png') });
 });
 await step('editar la lista: el emoji se cambia aparte, sin abrir el teclado, y solo admite emojis', async () => {
-  await a.locator('#nl').click();
+  await openLast(a);
   await a.locator('#lt').filter({ hasText: 'Verdulería' }).waitFor();
   await a.locator('[aria-label="Opciones de la lista"]').click();
   await a.getByRole('button', { name: 'Editar nombre y emoji' }).click();
@@ -379,7 +370,6 @@ await step('editar la lista: el emoji se cambia aparte, sin abrir el teclado, y 
   await a.fill('#sn', 'Verdu'); await a.locator('#sf button[type=submit]').click();
   await a.locator('#lt').filter({ hasText: 'Verdu' }).waitFor();
   assert.equal((await a.locator('#lt .em').textContent()).trim(), '🍐');
-  assert.equal(await a.locator('#nl-e').textContent(), '🍐');
 });
 await step('quitar el emoji vuelve a mostrar el ícono; se puede dejar otro y el nombre original', async () => {
   await a.locator('[aria-label="Opciones de la lista"]').click();
@@ -389,8 +379,6 @@ await step('quitar el emoji vuelve a mostrar el ícono; se puede dejar otro y el
   await a.locator('#sf button[type=submit]').click();
   await a.locator('#lt').filter({ hasText: 'Verdu' }).waitFor();
   assert.equal(await a.locator('#lt .em').count(), 0);
-  assert.equal(await a.locator('#nl svg').isVisible(), true, 'vuelve el ícono de la barra');
-  assert.equal(await a.locator('#nl-e').isHidden(), true);
   await a.locator('[aria-label="Opciones de la lista"]').click();
   await a.getByRole('button', { name: 'Editar nombre y emoji' }).click();
   await a.fill('#se', '🥬'); await a.fill('#sn', 'Verdulería'); await a.locator('#sf button[type=submit]').click();
@@ -423,6 +411,78 @@ await step('cerrar sesión borra los datos locales y al volver a ingresar recupe
   await a.fill('[data-au=pass]', 'contraseña-segura');
   await a.locator('#af button[type=submit]').click();
   await a.getByRole('heading', { name: 'Hola Tai 👋' }).waitFor();
+});
+console.log('compra, precios e historial');
+await step('marcar productos arma la compra del carrito con nombre, fecha y total', async () => {
+  await openLast(a);
+  await a.fill('#qi', 'Palta, Lechuga'); await a.keyboard.press('Enter');
+  await row(a, '#items', 'Palta').locator('.main').click();
+  await row(a, '#items', 'Lechuga').locator('.main').click();
+  await a.locator('.buy').waitFor();
+  const d = new Date(), dd = String(d.getDate()).padStart(2, '0'), mm = String(d.getMonth() + 1).padStart(2, '0');
+  assert.equal((await a.locator('.buy .bh b').textContent()).trim(), `Compra del ${dd}/${mm}`);
+  assert.equal(await a.locator('.buy .bh small').textContent(), `${dd}/${mm}/${d.getFullYear()}`);
+  assert.equal(await a.locator('#ct').textContent(), '$0');
+  assert.equal(await a.locator('.buy [data-a=closebuy]').textContent(), 'Comprado');
+  await a.screenshot({ path: join(SHOTS, '10-compra-carrito.png') });
+});
+await step('cada producto del carrito admite precio y el total se suma solo', async () => {
+  await row(a, '.buy', 'Palta').locator('.pr input').fill('1500');
+  await row(a, '.buy', 'Lechuga').locator('.pr input').fill('2.500,50');
+  assert.match(await a.locator('#ct').textContent(), /^\$4\.000,50$/);
+  assert.equal(await a.locator('#items > .it .pr').count(), 0, 'los pendientes no tienen precio');
+  await a.screenshot({ path: join(SHOTS, '10b-compra-precios.png') });
+});
+await step('desmarcar devuelve el producto a la lista original y le quita el precio', async () => {
+  await row(a, '.buy', 'Lechuga').locator('.main').click();
+  await row(a, '#items', 'Lechuga').waitFor();
+  assert.match(await a.locator('#ct').textContent(), /^\$1\.500$/);
+  await row(a, '#items', 'Lechuga').locator('.main').click();
+  assert.equal(await row(a, '.buy', 'Lechuga').locator('.pr input').inputValue(), '', 'el precio no vuelve');
+  await row(a, '.buy', 'Lechuga').locator('.pr input').fill('800');
+  assert.match(await a.locator('#ct').textContent(), /^\$2\.300$/);
+});
+await step('se edita el nombre, la fecha y lo gastado de la compra', async () => {
+  await a.locator('.buy [data-a=editbuy]').click();
+  await a.locator('#bn').fill('Verdu de la semana');
+  await a.locator('#bd').fill('2026-10-01');
+  await a.locator('#bg').fill('3000');
+  await a.locator('#sf button[type=submit]').click();
+  assert.equal((await a.locator('.buy .bh b').textContent()).trim(), 'Verdu de la semana');
+  assert.equal(await a.locator('.buy .bh small').textContent(), '01/10/2026');
+  assert.match(await a.locator('#ct').textContent(), /^\$3\.000$/);
+  assert.match(await a.locator('.bt').textContent(), /ingresado a mano/);
+});
+await step('"Comprado" cierra la compra: sale de la lista y queda en el historial', async () => {
+  await a.locator('.buy [data-a=closebuy]').click();
+  await toastHas(a, 'Compra guardada · $3.000');
+  assert.equal(await a.locator('.buy').count(), 0);
+  assert.equal(await row(a, '#items', 'Palta').count(), 0, 'lo comprado sale de la lista');
+  await goTab(a, 'hist');
+  await a.getByRole('heading', { name: 'Historial' }).waitFor();
+  const c = a.locator('.hc', { hasText: 'Verdu de la semana' });
+  assert.match(await c.textContent(), /01\/10\/2026/);
+  assert.match(await c.textContent(), /Verdulería/);
+  assert.match(await c.textContent(), /\$3\.000/);
+  await a.screenshot({ path: join(SHOTS, '10c-historial.png') });
+});
+await step('el detalle de la compra muestra cada producto con su precio y sobrevive a recargar', async () => {
+  await settle(a);
+  await a.reload();
+  await goTab(a, 'hist');
+  await a.locator('.hc', { hasText: 'Verdu de la semana' }).click();
+  const sh = a.locator('.sh');
+  assert.match(await sh.locator('.bl li', { hasText: 'Palta' }).textContent(), /\$1\.500/);
+  assert.match(await sh.locator('.bl li', { hasText: 'Lechuga' }).textContent(), /\$800/);
+  await a.screenshot({ path: join(SHOTS, '10d-historial-detalle.png') });
+  await sh.locator('#bn').fill('Verdu'); await sh.locator('#sf button[type=submit], button[type=submit]').first().click();
+  await a.locator('.hc', { hasText: /^Verdu/ }).waitFor();
+});
+await step('una compra del historial se puede eliminar', async () => {
+  await a.locator('.hc').first().click();
+  await a.locator('[data-a=delbuy]').click();
+  await a.locator('.sh .btn', { hasText: 'Sí, eliminar' }).click();
+  await a.getByText('Todavía no hay compras').waitFor();
 });
 await step('eliminar la cuenta borra todo en el servidor', async () => {
   await goTab(a, 'set');

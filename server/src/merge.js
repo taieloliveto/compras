@@ -3,10 +3,12 @@
    (copia a web/merge.js y a server/src/merge.js). No edites esas copias a mano. */
 
 const DAY = 86400000, TOMB_TTL = 30 * DAY;
-const MAXL = 200, MAXI = 2000, MAXC = 500;
+const MAXL = 200, MAXI = 2000, MAXC = 500, MAXB = 500, MAXBI = 300;
 const idOk = s => typeof s === 'string' && /^[A-Za-z0-9_-]{1,40}$/.test(s);
 const str = (s, n) => typeof s === 'string' ? s.slice(0, n) : '';
 const num = x => Number.isFinite(+x) ? +x : 0;
+const price = x => Math.min(1e9, Math.max(0, Math.round(num(x) * 100) / 100));
+const ymdOk = s => typeof s === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(s) && !Number.isNaN(Date.parse(s));
 const norm = s => String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/\s+/g, ' ').trim();
 
 /* Emoji de una lista: un solo carácter emoji (banderas, familias y teclas incluidas) o vacío. */
@@ -21,7 +23,7 @@ function firstEmoji(s) {
   return isEmoji(g) ? g : '';
 }
 
-function emptyState() { return { lists: {}, cat: {}, last: '', lastU: 0, name: '', nameU: 0 }; }
+function emptyState() { return { lists: {}, buys: {}, cat: {}, last: '', lastU: 0, name: '', nameU: 0 }; }
 
 /* Limpia y acota cualquier dato que venga de afuera (disco, red, otro dispositivo). */
 function sanitizeState(d, now) {
@@ -35,7 +37,8 @@ function sanitizeState(d, now) {
     if (!idOk(id) || !l || typeof l !== 'object') continue;
     const del = !!l.del, u = num(l.u);
     if (del && u < now - TOMB_TTL) continue;
-    const nl = { id, n: str(l.n, 80) || 'Lista', e: firstEmoji(l.e), c: num(l.c), u, del, items: {} };
+    const nl = { id, n: str(l.n, 80) || 'Lista', e: firstEmoji(l.e), c: num(l.c), u, del, items: {}, buy: null };
+    if (!del && l.buy && typeof l.buy === 'object') nl.buy = { n: str(l.buy.n, 80).trim(), dt: ymdOk(l.buy.dt) ? l.buy.dt : '', g: price(l.buy.g) };
     if (!del && l.items && typeof l.items === 'object') {
       for (const iid of Object.keys(l.items).slice(0, MAXI)) {
         const it = l.items[iid];
@@ -44,11 +47,30 @@ function sanitizeState(d, now) {
         if (idel && iu < now - TOMB_TTL) continue;
         const n = str(it.n, 120).trim();
         if (!n) continue;
-        nl.items[iid] = { id: iid, n, q: Math.min(99, Math.max(1, Math.round(num(it.q)) || 1)), d: !!it.d, c: num(it.c), u: iu, del: idel };
+        nl.items[iid] = { id: iid, n, q: Math.min(99, Math.max(1, Math.round(num(it.q)) || 1)), d: !!it.d, p: it.d ? price(it.p) : 0, c: num(it.c), u: iu, del: idel };
       }
     }
     out.lists[id] = nl;
   }
+
+  /* Compras cerradas (historial): cada una guarda una copia de lo que se compró. */
+  const B = d.buys && typeof d.buys === 'object' ? d.buys : {};
+  const be = [];
+  for (const id of Object.keys(B).slice(0, MAXB * 2)) {
+    const b = B[id];
+    if (!idOk(id) || !b || typeof b !== 'object') continue;
+    const del = !!b.del, u = num(b.u);
+    if (del && u < now - TOMB_TTL) continue;
+    const its = [];
+    if (!del && Array.isArray(b.its)) for (const x of b.its.slice(0, MAXBI)) {
+      if (!x || typeof x !== 'object') continue;
+      const n = str(x.n, 120).trim();
+      if (n) its.push({ n, q: Math.min(99, Math.max(1, Math.round(num(x.q)) || 1)), p: price(x.p) });
+    }
+    be.push({ id, lid: idOk(b.lid) ? b.lid : '', ln: str(b.ln, 80), le: firstEmoji(b.le), n: str(b.n, 80).trim() || 'Compra', dt: ymdOk(b.dt) ? b.dt : '', g: price(b.g), its, c: num(b.c), u, del });
+  }
+  be.sort((a, b) => (a.del - b.del) || b.u - a.u);
+  for (const b of be.slice(0, MAXB)) out.buys[b.id] = b;
 
   const C = d.cat && typeof d.cat === 'object' ? d.cat : {};
   const ce = [];
@@ -86,6 +108,11 @@ function mergeState(a, b, now) {
       items[i] = !p ? q : !q ? p : (p.u >= q.u ? p : q);
     }
     out.lists[id] = { ...w, items };
+  }
+
+  for (const k of new Set([...Object.keys(a.buys), ...Object.keys(b.buys)])) {
+    const p = a.buys[k], q = b.buys[k];
+    out.buys[k] = !p ? q : !q ? p : (p.u >= q.u ? p : q);
   }
 
   for (const k of new Set([...Object.keys(a.cat), ...Object.keys(b.cat)])) {

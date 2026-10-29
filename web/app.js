@@ -1,7 +1,7 @@
 'use strict';
 /* Compras — app de listas de compras (PWA). Usa merge.js (global: mergeState, sanitizeState, emptyState, norm). */
 (() => {
-const VERSION = '1.3.0';
+const VERSION = '1.4.0';
 const CFG = window.COMPRAS_CONFIG || {};
 const KEY = 'compras.v1';
 const $ = s => document.querySelector(s);
@@ -16,6 +16,19 @@ function lastEmoji(s) {
   try { for (const g of new Intl.Segmenter(undefined, { granularity: 'grapheme' }).segment(String(s))) if (isEmoji(g.segment)) out = g.segment; }
   catch (_) { out = firstEmoji(Array.from(String(s)).pop() || ''); }
   return out;
+}
+/* Fechas y dinero */
+const pad = n => String(n).padStart(2, '0');
+const today = () => { const d = new Date(); return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`; };
+const fmtDate = dt => { const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dt || ''); return m ? `${m[3]}/${m[2]}/${m[1]}` : 'Sin fecha'; };
+const money = n => { n = +n || 0; return '$' + n.toLocaleString('es-AR', { minimumFractionDigits: Number.isInteger(n) ? 0 : 2, maximumFractionDigits: 2 }); };
+const defName = () => { const d = today().split('-'); return `Compra del ${d[2]}/${d[1]}`; };
+function parsePrice(v) {
+  let s = String(v || '').replace(/[^\d.,]/g, '');
+  if (s.includes(',')) s = s.replace(/\./g, '').replace(',', '.');
+  else if (/^\d{1,3}(\.\d{3})+$/.test(s)) s = s.replace(/\./g, '');
+  const n = parseFloat(s);
+  return Number.isFinite(n) ? Math.min(1e9, Math.round(n * 100) / 100) : 0;
 }
 let seq = 0;
 const uid = () => Math.random().toString(36).slice(2, 8) + now().toString(36);
@@ -42,6 +55,9 @@ const lists = () => Object.values(D().lists).filter(l => !l.del).sort((a, b) => 
 const itemsOf = l => Object.values(l.items).filter(i => !i.del);
 const pendingOf = l => itemsOf(l).filter(i => !i.d).sort((a, b) => b.c - a.c);
 const doneOf = l => itemsOf(l).filter(i => i.d).sort((a, b) => b.u - a.u);
+const cartTotal = l => Math.round(doneOf(l).reduce((a, i) => a + (i.p || 0), 0) * 100) / 100;
+const spent = l => (l.buy && l.buy.g) || cartTotal(l);
+const buys = () => Object.values(D().buys).filter(b => !b.del).sort((a, b) => (b.dt > a.dt ? 1 : b.dt < a.dt ? -1 : b.c - a.c));
 const curList = () => { const l = D().lists[cur]; return l && !l.del ? l : null; };
 /* Lista a la que se agrega desde Home: la última que usaste (o la primera si no hay registro). */
 const destList = () => { const l = D().lists[D().last]; return (l && !l.del) ? l : (lists()[0] || null); };
@@ -107,6 +123,7 @@ function afterRemote() {
   if (view === 'list') { if (!curList()) { go('lists'); return; } paintList(); }
   else if (view === 'home' && !sheet) paintHome();
   else if (view === 'lists' && !sheet) paintCards();
+  else if (view === 'hist' && !sheet) paintHist();
   paintNav();
 }
 
@@ -133,11 +150,11 @@ function addItem(l, e) {
   const ex = itemsOf(l).find(i => norm(i.n) === k);
   let name = e.n;
   if (ex) {
-    if (ex.d) { ex.d = false; ex.q = e.q; } else ex.q = Math.min(99, ex.q + e.q);
+    if (ex.d) { ex.d = false; ex.p = 0; ex.q = e.q; } else ex.q = Math.min(99, ex.q + e.q);
     ex.u = t; name = ex.n;
   } else {
     const id = uid();
-    l.items[id] = { id, n: e.n, q: e.q, d: false, c: stamp(), u: t, del: false };
+    l.items[id] = { id, n: e.n, q: e.q, d: false, p: 0, c: stamp(), u: t, del: false };
   }
   const c = D().cat[k] || { n: name, c: 0, u: 0 };
   c.n = name; c.c = Math.min(9999, c.c + 1); c.u = t;
@@ -173,7 +190,44 @@ function addText(text) {
 function toggle(id) {
   const it = activeList()?.items[id];
   if (!it) return;
-  it.d = !it.d; it.u = now(); touch(); repaint();
+  const l = activeList(), t = now();
+  it.d = !it.d; it.u = t;
+  if (it.d) { if (!l.buy) { l.buy = { n: defName(), dt: today(), g: 0 }; l.u = t; } }
+  else { it.p = 0; if (!doneOf(l).length && l.buy) { l.buy = null; l.u = t; } }   // al desmarcar vuelve a la lista y pierde el precio
+  touch(); repaint();
+}
+let priceT = null;
+function setPrice(id, v) {
+  const l = curList(), it = l && l.items[id]; if (!it || !it.d) return;
+  it.p = parsePrice(v); it.u = now();
+  const e = $('#ct'); if (e) e.textContent = money(spent(l));
+  const g = $('#cg'); if (g) g.hidden = !(l.buy && l.buy.g);
+  S.dirty = true; rev++;
+  clearTimeout(priceT); priceT = setTimeout(touch, 500);
+}
+/* Cierra la compra: guarda una copia en el historial y saca los productos comprados de la lista. */
+function closeBuy() {
+  const l = curList(); if (!l) return;
+  const done = doneOf(l);
+  if (!done.length) return;
+  if (done.length > 300) { toast('Una compra admite hasta 300 productos. Desmarcá algunos.'); return; }
+  clearTimeout(priceT);
+  const t = now(), id = uid(), prev = l.buy ? { ...l.buy } : null, b = l.buy || {};
+  D().buys[id] = { id, lid: l.id, ln: l.n, le: l.e || '', n: (b.n || '').trim() || defName(), dt: b.dt || today(), g: b.g || cartTotal(l),
+    its: done.map(i => ({ n: i.n, q: i.q, p: i.p || 0 })), c: stamp(), u: t, del: false };
+  const ids = done.map(i => i.id), prices = done.map(i => i.p || 0);
+  ids.forEach(i => { l.items[i].del = true; l.items[i].u = t; });
+  l.buy = null; l.u = t;
+  touch(); paintList();
+  const lid = l.id, total = D().buys[id].g;
+  toast(`Compra guardada · ${money(total)}`, 'Deshacer', () => {
+    const L = D().lists[lid], B = D().buys[id]; if (!L || !B) return;
+    const t2 = now();
+    B.del = true; B.u = t2;
+    ids.forEach((i, k) => { if (L.items[i]) { L.items[i].del = false; L.items[i].d = true; L.items[i].p = prices[k]; L.items[i].u = t2; } });
+    L.buy = prev; L.u = t2;
+    touch(); repaint();
+  });
 }
 function delItem(id) {
   const l = activeList(), it = l?.items[id];
@@ -187,28 +241,31 @@ function delItem(id) {
 }
 function clearDone() {
   const l = curList(); if (!l) return;
-  const lid = cur, ids = doneOf(l).map(i => i.id);
+  const lid = cur, ids = doneOf(l).map(i => i.id), prevBuy = l.buy ? { ...l.buy } : null;
   if (!ids.length) return;
   const t = now();
   ids.forEach(i => { l.items[i].del = true; l.items[i].u = t; });
+  l.buy = null; l.u = t;
   touch(); paintList();
   toast(ids.length === 1 ? '1 producto quitado del carrito' : `${ids.length} productos quitados del carrito`, 'Deshacer', () => {
     const L = D().lists[lid]; if (!L) return;
     const t2 = now();
     ids.forEach(i => { if (L.items[i]) { L.items[i].del = false; L.items[i].u = t2; } });
+    if (prevBuy && !L.buy) { L.buy = prevBuy; L.u = t2; }
     touch(); repaint();
   });
 }
 function uncheckAll() {
   const l = curList(); if (!l) return;
   const t = now();
-  doneOf(l).forEach(i => { i.d = false; i.u = t; });
+  doneOf(l).forEach(i => { i.d = false; i.p = 0; i.u = t; });
+  l.buy = null; l.u = t;
   touch(); paintList();
 }
 function newList(name, emoji) {
   const t = now(), id = uid();
   const n = (name || '').trim().slice(0, 80) || `Lista ${lists().length + 1}`;
-  D().lists[id] = { id, n, e: firstEmoji(emoji), c: stamp(), u: t, del: false, items: {} };
+  D().lists[id] = { id, n, e: firstEmoji(emoji), c: stamp(), u: t, del: false, items: {}, buy: null };
   touch();
   return id;
 }
@@ -221,8 +278,8 @@ function renameList(name, emoji) {
 function duplicateList() {
   const l = curList(); if (!l) return;
   const id = uid(), t = now();
-  const copy = { id, n: (l.n + ' (copia)').slice(0, 80), e: l.e || '', c: stamp(), u: t, del: false, items: {} };
-  for (const i of itemsOf(l)) { const iid = uid(); copy.items[iid] = { id: iid, n: i.n, q: i.q, d: false, c: stamp(), u: t, del: false }; }
+  const copy = { id, n: (l.n + ' (copia)').slice(0, 80), e: l.e || '', c: stamp(), u: t, del: false, items: {}, buy: null };
+  for (const i of itemsOf(l)) { const iid = uid(); copy.items[iid] = { id: iid, n: i.n, q: i.q, d: false, p: 0, c: stamp(), u: t, del: false }; }
   D().lists[id] = copy; touch();
   return id;
 }
@@ -326,7 +383,8 @@ function vList() {
 <div id="sug"></div><div id="items"></div>`;
 }
 function rowHtml(i) {
-  return `<div class="it${i.d ? ' done' : ''}"><button class="main" data-a="tg" data-id="${esc(i.id)}" aria-pressed="${i.d}"><span class="box" aria-hidden="true"></span><span class="nm">${esc(i.n)}</span>${i.q > 1 ? `<span class="qty">×${i.q}</span>` : ''}</button><button class="more" data-a="ed" data-id="${esc(i.id)}" aria-label="Editar ${esc(i.n)}">⋯</button></div>`;
+  const pr = i.d ? `<label class="pr"><span aria-hidden="true">$</span><input type="text" inputmode="decimal" data-pr="${esc(i.id)}" value="${i.p ? esc(String(i.p).replace('.', ',')) : ''}" placeholder="0" autocomplete="off" aria-label="Precio de ${esc(i.n)}"></label>` : '';
+  return `<div class="it${i.d ? ' done' : ''}"><button class="main" data-a="tg" data-id="${esc(i.id)}" aria-pressed="${i.d}"><span class="box" aria-hidden="true"></span><span class="nm">${esc(i.n)}</span>${i.q > 1 ? `<span class="qty">×${i.q}</span>` : ''}</button>${pr}<button class="more" data-a="ed" data-id="${esc(i.id)}" aria-label="Editar ${esc(i.n)}">⋯</button></div>`;
 }
 function paintList() {
   const l = curList(); if (!l) return;
@@ -337,7 +395,13 @@ function paintList() {
   if (!p.length && !d.length) h = `<div class="empty"><div class="big" aria-hidden="true">📝</div><p class="mut">Escribí arriba lo que necesitás.<br>Podés poner varios separados por coma: <i>leche, pan, 2 huevos</i></p></div>`;
   else if (!p.length) h = `<div class="alldone">🎉 ¡Todo comprado!</div>`;
   h += p.map(rowHtml).join('');
-  if (d.length) h += `<div class="sec"><h3>En el carrito · ${d.length}</h3><span><button class="mini" data-a="unall">Desmarcar</button><button class="mini" data-a="cleardone">Vaciar</button></span></div>` + d.map(rowHtml).join('');
+  if (d.length) {
+    const b = l.buy || { n: defName(), dt: today(), g: 0 };
+    h += `<div class="sec"><h3>En el carrito · ${d.length}</h3><span><button class="mini" data-a="unall">Desmarcar</button><button class="mini" data-a="cleardone">Vaciar</button></span></div>
+<section class="buy" aria-label="Compra en curso"><div class="bh"><div><b>${esc(b.n)}</b><small>${esc(fmtDate(b.dt))}</small></div><button class="mini" data-a="editbuy">Editar</button></div>${d.map(rowHtml).join('')}
+<div class="bt"><span>Gastado<small id="cg"${b.g ? '' : ' hidden'}> (ingresado a mano)</small></span><b id="ct">${money(spent(l))}</b></div>
+<button class="btn" data-a="closebuy">Comprado</button></section>`;
+  }
   $('#items').innerHTML = h;
   paintSug(); paintNav();
 }
@@ -348,6 +412,20 @@ function paintSug() {
   el.innerHTML = s.length ? (q.trim() ? '' : '<p class="lab">Frecuentes</p>') + '<div class="chips">' + s.map(n => `<button type="button" class="chip" data-a="sg" data-n="${esc(n)}">+ ${esc(n)}</button>`).join('') + '</div>' : '';
 }
 function repaint() { if (view === 'home') paintHome(); else if (view === 'list') paintList(); paintNav(); }
+
+function histCard(b) {
+  const n = b.its.length;
+  return `<button class="card hc" data-a="hopen" data-id="${esc(b.id)}"><span class="hl"><b>${esc(b.n)}</b><small>${esc(fmtDate(b.dt))} · ${b.le ? esc(b.le) + ' ' : ''}${esc(b.ln || 'Lista')} · ${n} ${n === 1 ? 'producto' : 'productos'}</small></span><span class="hm">${money(b.g)}</span></button>`;
+}
+function histHtml() {
+  const B = buys();
+  if (!B.length) return `<div class="empty"><div class="big" aria-hidden="true">🧾</div><h2>Todavía no hay compras</h2><p class="mut">Marcá productos en una lista y tocá <b>Comprado</b>: queda guardada acá con lo que gastaste.</p></div>`;
+  const mk = today().slice(0, 7), mb = B.filter(b => b.dt.slice(0, 7) === mk);
+  const sum = a => Math.round(a.reduce((x, b) => x + b.g, 0) * 100) / 100;
+  return `<div class="hsum"><div><small>Este mes</small><b>${money(sum(mb))}</b><small>${mb.length} ${mb.length === 1 ? 'compra' : 'compras'}</small></div><div><small>Total guardado</small><b>${money(sum(B))}</b><small>${B.length} ${B.length === 1 ? 'compra' : 'compras'}</small></div></div><div id="cards">${B.map(histCard).join('')}</div>`;
+}
+function vHist() { return `<div class="bar"><h1>Historial</h1>${syncBadge()}</div><div id="hist">${histHtml()}</div>`; }
+function paintHist() { const e = $('#hist'); if (e) e.innerHTML = histHtml(); }
 
 function vSet() {
   const n = lists().length;
@@ -360,26 +438,16 @@ function vSet() {
 <button class="sb" data-a="syncnow">Sincronizar ahora</button>
 ${installEvt ? '<button class="sb" data-a="install">Instalar la app</button>' : '<p class="mut small">Para instalarla: en Android, menú del navegador → <i>Instalar app</i>. En iPhone, Safari → Compartir → <i>Agregar a inicio</i>.</p>'}
 <h3>Datos</h3>
-<button class="sb" data-a="export">Exportar mis listas (JSON)</button>
+<button class="sb" data-a="export">Exportar mis listas e historial (JSON)</button>
 <h3>Sesión</h3>
 <button class="sb" data-a="logout">Cerrar sesión</button>
 <button class="sb dng" data-a="delacc">Eliminar mi cuenta y mis datos</button>
 <p class="mut small" style="margin-top:22px">Compras ${VERSION}. Tus listas se guardan en este dispositivo y en la nube; funcionan sin conexión y se sincronizan cuando vuelve.</p>`;
 }
 
-/* Barra flotante: pestañas + acceso rápido a la última lista. */
+/* Barra flotante: pestañas (Home, Listas, Historial). */
 function paintNav() {
   document.querySelectorAll('#nv .nb[data-t]').forEach(b => (b.dataset.t === view ? b.setAttribute('aria-current', 'page') : b.removeAttribute('aria-current')));
-  const b = $('#nl'); if (!b) return;
-  const l = destList();
-  b.hidden = !l;
-  if (l) {
-    $('#nl-n').textContent = l.n;
-    const ne = $('#nl-e'); ne.textContent = l.e || ''; ne.hidden = !l.e;
-    b.classList.toggle('has-e', !!l.e);
-    b.setAttribute('aria-label', `Abrir la lista ${lt(l)}`);
-    if (view === 'list') b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current');
-  }
 }
 
 /* ---------- Ventanas flotantes ---------- */
@@ -396,6 +464,20 @@ function sheetHtml() {
   if (s.t === 'switch') { const L = lists();
     return `<div class="sh" role="dialog" aria-modal="true" aria-label="Cambiar de lista"><h2>Mis listas</h2>${L.map(l => `<button class="rowb" data-a="open" data-id="${esc(l.id)}"><span>${lh(l)}</span>${l.id === cur ? '<span class="ck" aria-label="Lista actual">✓</span>' : ''}</button>`).join('')}<button class="rowb" data-a="newlist" style="color:var(--acc);font-weight:700">+ Nueva lista</button></div>`; }
   if (s.t === 'lmenu') return `<div class="sh" role="dialog" aria-modal="true" aria-label="Opciones de la lista"><h2>${curList() ? lh(curList()) : 'Lista'}</h2><button class="rowb" data-a="rename">Editar nombre y emoji</button><button class="rowb" data-a="dup">Duplicar (sin marcar)</button><button class="rowb" data-a="unall2">Desmarcar todo</button><button class="rowb" data-a="cleardone2">Vaciar comprados</button><button class="rowb dng" data-a="dellist">Eliminar lista</button></div>`;
+  if (s.t === 'buy') { const l = curList(), b = (l && l.buy) || { n: defName(), dt: today(), g: 0 };
+    return `<form id="sf" class="sh" role="dialog" aria-modal="true" aria-label="Editar compra"><h2>Compra</h2>
+<label class="f">Nombre<input id="bn" type="text" maxlength="80" value="${esc(b.n)}" autocomplete="off"></label>
+<label class="f">Fecha<input id="bd" type="date" value="${esc(b.dt)}"></label>
+<label class="f">Cuánto gastaste<input id="bg" type="text" inputmode="decimal" value="${b.g ? esc(String(b.g).replace('.', ',')) : ''}" placeholder="${l ? esc(money(cartTotal(l))) : ''} (suma de precios)" autocomplete="off"></label>
+<p class="mut small">Si lo dejás vacío se usa la suma de los precios de cada producto.</p>
+<button class="btn" type="submit" style="margin-top:14px">Guardar</button><button class="btn ghost" type="button" data-a="close">Cancelar</button></form>`; }
+  if (s.t === 'hbuy') { const b = D().buys[s.id]; if (!b || b.del) return '';
+    return `<form id="sf" class="sh" role="dialog" aria-modal="true" aria-label="Compra"><h2>${esc(b.n)}</h2>
+<ul class="bl">${b.its.map(i => `<li><span>${esc(i.n)}${i.q > 1 ? ` <i>×${i.q}</i>` : ''}</span><b>${i.p ? money(i.p) : '—'}</b></li>`).join('')}</ul>
+<label class="f">Nombre<input id="bn" type="text" maxlength="80" value="${esc(b.n)}" autocomplete="off"></label>
+<label class="f">Fecha<input id="bd" type="date" value="${esc(b.dt)}"></label>
+<label class="f">Total gastado<input id="bg" type="text" inputmode="decimal" value="${b.g ? esc(String(b.g).replace('.', ',')) : ''}" autocomplete="off"></label>
+<button class="btn" type="submit" style="margin-top:14px">Guardar</button><button class="btn danger" type="button" data-a="delbuy" data-id="${esc(b.id)}">Eliminar compra</button><button class="btn ghost" type="button" data-a="close">Cerrar</button></form>`; }
   return '';
 }
 function renderSheet() {
@@ -440,7 +522,7 @@ function toast(msg, label, fn) {
 function go(v) { view = v; sheet = null; render(); window.scrollTo(0, 0); }
 function render() {
   const v = $('#v');
-  v.innerHTML = view === 'auth' ? vAuth() : view === 'home' ? vHome() : view === 'lists' ? vLists() : view === 'list' ? vList() : vSet();
+  v.innerHTML = view === 'auth' ? vAuth() : view === 'home' ? vHome() : view === 'lists' ? vLists() : view === 'hist' ? vHist() : view === 'list' ? vList() : vSet();
   const showNav = view !== 'auth';
   $('#nv').hidden = !showNav;
   document.body.classList.toggle('nonav', !showNav);
@@ -501,21 +583,24 @@ async function deleteAccount() {
   toast('Cuenta eliminada');
 }
 function exportData() {
-  const out = { exportado: new Date().toISOString(), listas: lists().map(l => ({ nombre: l.n, emoji: l.e || '', productos: itemsOf(l).map(i => ({ nombre: i.n, cantidad: i.q, comprado: i.d })) })) };
+  const out = { exportado: new Date().toISOString(), listas: lists().map(l => ({ nombre: l.n, emoji: l.e || '', productos: itemsOf(l).map(i => ({ nombre: i.n, cantidad: i.q, comprado: i.d, precio: i.p || 0 })) })),
+    historial: buys().map(b => ({ nombre: b.n, fecha: b.dt, lista: b.ln, gastado: b.g, productos: b.its.map(i => ({ nombre: i.n, cantidad: i.q, precio: i.p })) })) };
   const a = document.createElement('a');
   a.href = URL.createObjectURL(new Blob([JSON.stringify(out, null, 2)], { type: 'application/json' }));
   a.download = `compras-${new Date().toISOString().slice(0, 10)}.json`;
   document.body.append(a); a.click(); a.remove();
   setTimeout(() => URL.revokeObjectURL(a.href), 2000);
 }
-function openDest() { const l = destList(); if (l) openList(l.id); else go('lists'); }
 
 const A = {
   tab(b) { go(b.dataset.t); },
   am(b) { authMode = b.dataset.m; authErr = ''; render(); },
   lists() { go('lists'); },
   open(b) { openList(b.dataset.id); },
-  lastlist() { openDest(); },
+  editbuy() { openSheet({ t: 'buy' }); },
+  closebuy() { closeBuy(); },
+  hopen(b) { openSheet({ t: 'hbuy', id: b.dataset.id }); },
+  delbuy(b) { const x = D().buys[b.dataset.id]; if (!x) return; ask(`¿Eliminar “${x.n}”?`, 'Se borra del historial. No se puede deshacer.', 'Sí, eliminar', () => { x.del = true; x.u = now(); touch(); paintHist(); toast('Compra eliminada'); }); },
   pick() { openSheet(lists().length ? { t: 'pick' } : { t: 'newlist' }); },
   setdest(b) { setLast(b.dataset.id); closeSheet(); repaint(); },
   aqm() { addQty = Math.max(1, addQty - 1); syncStep(); },
@@ -569,6 +654,18 @@ document.addEventListener('submit', e => {
       if (view === 'home') { setLast(nid); repaint(); } else openList(nid);
     } else if (sheet.t === 'rename') { renameList(val, ($('#se') || {}).value); closeSheet(); paintList(); }
     else if (sheet.t === 'name') { D().name = val.trim().slice(0, 30); D().nameU = now(); touch(); closeSheet(); render(); }
+    else if (sheet.t === 'buy') {
+      const l = curList();
+      if (l) { const g = parsePrice(($('#bg') || {}).value), dt = ($('#bd') || {}).value || today();
+        l.buy = { n: (($('#bn') || {}).value || '').trim().slice(0, 80) || defName(), dt: /^\d{4}-\d{2}-\d{2}$/.test(dt) ? dt : today(), g }; l.u = now(); touch(); }
+      closeSheet(); paintList();
+    } else if (sheet.t === 'hbuy') {
+      const b = D().buys[sheet.id];
+      if (b) { const dt = ($('#bd') || {}).value;
+        b.n = (($('#bn') || {}).value || '').trim().slice(0, 80) || b.n; if (/^\d{4}-\d{2}-\d{2}$/.test(dt)) b.dt = dt;
+        b.g = parsePrice(($('#bg') || {}).value); b.u = now(); touch(); }
+      closeSheet(); paintHist();
+    }
     else if (sheet.t === 'item') {
       const i = activeList()?.items[sheet.id];
       const n = val.trim().slice(0, 120);
@@ -580,6 +677,7 @@ document.addEventListener('submit', e => {
 document.addEventListener('input', e => {
   const t = e.target;
   if (t.id === 'qi') paintSug();
+  if (t.dataset && t.dataset.pr) setPrice(t.dataset.pr, t.value);
   if (t.id === 'se') { t.value = lastEmoji(t.value); markEmo(); }
   const au = t.dataset && t.dataset.au;
   if (au === 'name') authName = t.value;

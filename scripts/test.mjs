@@ -19,6 +19,19 @@ const I = (id, n, u, extra = {}) => ({ id, n, q: 1, d: false, c: 1, u, del: fals
 const T = Date.now();
 
 console.log('merge');
+await ok('precios, compra en curso e historial se limpian y se combinan', () => {
+  const buy = { id: 'b1', lid: 'l1', ln: 'Súper', le: '🛒', n: 'Compra', dt: '2026-10-20', g: 1234.567, its: [{ n: 'Leche', q: 2, p: 100 }, { n: '', q: 1, p: 5 }], c: 1, u: T, del: false };
+  const a = { lists: { l1: L('l1', 'Súper', { i1: I('i1', 'Leche', T, { d: true, p: '12.345' }), i2: I('i2', 'Pan', T, { d: false, p: 50 }) }, T, { buy: { n: 'Mi compra', dt: 'mal', g: -5 } }) }, buys: { b1: buy } };
+  const m = mergeState(a, { buys: { b1: { ...buy, n: 'Editada', u: T + 5 }, b2: { ...buy, id: 'b2' } } });
+  assert.equal(m.lists.l1.items.i1.p, 12.35);
+  assert.equal(m.lists.l1.items.i2.p, 0, 'un pendiente no guarda precio');
+  assert.deepEqual(m.lists.l1.buy, { n: 'Mi compra', dt: '', g: 0 });
+  assert.equal(m.buys.b1.n, 'Editada');
+  assert.equal(m.buys.b1.g, 1234.57);
+  assert.equal(m.buys.b1.its.length, 1, 'descarta productos sin nombre');
+  assert.ok(m.buys.b2);
+  assert.equal(sanitizeState({ buys: { x: { n: 'a', u: T, del: true } } }).buys.x.its.length, 0);
+});
 await ok('une listas y productos de dos dispositivos', () => {
   const a = { lists: { l1: L('l1', 'Súper', { i1: I('i1', 'Leche', T) }) } };
   const b = { lists: { l1: L('l1', 'Súper', { i2: I('i2', 'Pan', T) }), l2: L('l2', 'Feria') } };
