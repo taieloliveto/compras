@@ -1,7 +1,7 @@
 'use strict';
 /* Compras — app de listas de compras (PWA). Usa merge.js (global: mergeState, sanitizeState, emptyState, norm). */
 (() => {
-const VERSION = '1.4.0';
+const VERSION = '1.5.0';
 const CFG = window.COMPRAS_CONFIG || {};
 const KEY = 'compras.v1';
 const $ = s => document.querySelector(s);
@@ -23,13 +23,19 @@ const today = () => { const d = new Date(); return `${d.getFullYear()}-${pad(d.g
 const fmtDate = dt => { const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dt || ''); return m ? `${m[3]}/${m[2]}/${m[1]}` : 'Sin fecha'; };
 const money = n => { n = +n || 0; return '$' + n.toLocaleString('es-AR', { minimumFractionDigits: Number.isInteger(n) ? 0 : 2, maximumFractionDigits: 2 }); };
 const defName = () => { const d = today().split('-'); return `Compra del ${d[2]}/${d[1]}`; };
-function parsePrice(v) {
+function parseNum(v) {
   let s = String(v || '').replace(/[^\d.,]/g, '');
   if (s.includes(',')) s = s.replace(/\./g, '').replace(',', '.');
   else if (/^\d{1,3}(\.\d{3})+$/.test(s)) s = s.replace(/\./g, '');
   const n = parseFloat(s);
-  return Number.isFinite(n) ? Math.min(1e9, Math.round(n * 100) / 100) : 0;
+  return Number.isFinite(n) ? n : 0;
 }
+const parsePrice = v => Math.min(1e9, Math.round(parseNum(v) * 100) / 100);
+/* Peso: se guarda en gramos. */
+const toGrams = (v, u) => Math.min(1e7, Math.round(parseNum(v) * (u === 'g' ? 1 : 1000)));
+const fmtW = g => g >= 1000 ? (g / 1000).toLocaleString('es-AR', { maximumFractionDigits: 3 }) + ' kg' : g + ' g';
+const MESES = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
+const monthLabel = k => { const m = /^(\d{4})-(\d{2})$/.exec(k || ''); return m ? `${MESES[+m[2] - 1]} ${m[1]}` : 'Sin fecha'; };
 let seq = 0;
 const uid = () => Math.random().toString(36).slice(2, 8) + now().toString(36);
 const stamp = () => now() + (++seq % 1000) / 1000;
@@ -49,9 +55,12 @@ let view = 'auth', cur = '', sheet = null, busy = false, st = 'ok', rev = 0;
 let authMode = 'login', authErr = '', authEmail = S.email, authPass = '', authName = '';
 let installEvt = null;
 let addQty = 1;                       // cantidad elegida antes de agregar
+let addW = '', addU = 'kg';           // peso opcional (kg por defecto)
+let hMonth = '', dragging = false;    // mes elegido en el historial · arrastrando una lista
 
 const D = () => S.data;
-const lists = () => Object.values(D().lists).filter(l => !l.del).sort((a, b) => a.c - b.c);
+const ordK = e => e.o || e.c;
+const lists = () => Object.values(D().lists).filter(l => !l.del).sort((a, b) => ordK(a) - ordK(b));
 const itemsOf = l => Object.values(l.items).filter(i => !i.del);
 const pendingOf = l => itemsOf(l).filter(i => !i.d).sort((a, b) => b.c - a.c);
 const doneOf = l => itemsOf(l).filter(i => i.d).sort((a, b) => b.u - a.u);
@@ -122,7 +131,7 @@ function expireSession() {
 function afterRemote() {
   if (view === 'list') { if (!curList()) { go('lists'); return; } paintList(); }
   else if (view === 'home' && !sheet) paintHome();
-  else if (view === 'lists' && !sheet) paintCards();
+  else if (view === 'lists' && !sheet && !dragging) paintCards();
   else if (view === 'hist' && !sheet) paintHist();
   paintNav();
 }
@@ -150,11 +159,11 @@ function addItem(l, e) {
   const ex = itemsOf(l).find(i => norm(i.n) === k);
   let name = e.n;
   if (ex) {
-    if (ex.d) { ex.d = false; ex.p = 0; ex.q = e.q; } else ex.q = Math.min(99, ex.q + e.q);
+    if (ex.d) { ex.d = false; ex.p = 0; ex.q = e.q; ex.w = e.w || 0; } else { ex.q = Math.min(99, ex.q + e.q); ex.w = Math.min(1e7, (ex.w || 0) + (e.w || 0)); }
     ex.u = t; name = ex.n;
   } else {
     const id = uid();
-    l.items[id] = { id, n: e.n, q: e.q, d: false, p: 0, c: stamp(), u: t, del: false };
+    l.items[id] = { id, n: e.n, q: e.q, d: false, p: 0, w: e.w || 0, c: stamp(), u: t, del: false };
   }
   const c = D().cat[k] || { n: name, c: 0, u: 0 };
   c.n = name; c.c = Math.min(9999, c.c + 1); c.u = t;
@@ -171,13 +180,15 @@ function addText(text) {
     l = D().lists[newList('Mi lista')];       // primera vez: se crea una lista sola
   }
   let n = 0;
+  const wg = entries.length === 1 ? toGrams(addW, addU) : 0;      // el peso solo vale cuando se agrega un único producto
   for (const e of entries) {
+    e.w = wg;
     if (Object.keys(l.items).length >= 1900) { toast('La lista llegó al máximo de productos'); break; }
     if (!e.x) e.q = addQty;
     addItem(l, e); n++;
   }
   if (n) {
-    addQty = 1;
+    addQty = 1; addW = ''; addU = 'kg';
     if (D().last !== l.id) { D().last = l.id; D().lastU = now(); }
     touch();
     if (view === 'home') {
@@ -214,7 +225,7 @@ function closeBuy() {
   clearTimeout(priceT);
   const t = now(), id = uid(), prev = l.buy ? { ...l.buy } : null, b = l.buy || {};
   D().buys[id] = { id, lid: l.id, ln: l.n, le: l.e || '', n: (b.n || '').trim() || defName(), dt: b.dt || today(), g: b.g || cartTotal(l),
-    its: done.map(i => ({ n: i.n, q: i.q, p: i.p || 0 })), c: stamp(), u: t, del: false };
+    its: done.map(i => ({ n: i.n, q: i.q, p: i.p || 0, w: i.w || 0 })), c: stamp(), u: t, del: false };
   const ids = done.map(i => i.id), prices = done.map(i => i.p || 0);
   ids.forEach(i => { l.items[i].del = true; l.items[i].u = t; });
   l.buy = null; l.u = t;
@@ -265,7 +276,7 @@ function uncheckAll() {
 function newList(name, emoji) {
   const t = now(), id = uid();
   const n = (name || '').trim().slice(0, 80) || `Lista ${lists().length + 1}`;
-  D().lists[id] = { id, n, e: firstEmoji(emoji), c: stamp(), u: t, del: false, items: {}, buy: null };
+  D().lists[id] = { id, n, e: firstEmoji(emoji), c: stamp(), u: t, del: false, items: {}, buy: null, o: 0 };
   touch();
   return id;
 }
@@ -279,7 +290,7 @@ function duplicateList() {
   const l = curList(); if (!l) return;
   const id = uid(), t = now();
   const copy = { id, n: (l.n + ' (copia)').slice(0, 80), e: l.e || '', c: stamp(), u: t, del: false, items: {}, buy: null };
-  for (const i of itemsOf(l)) { const iid = uid(); copy.items[iid] = { id: iid, n: i.n, q: i.q, d: false, p: 0, c: stamp(), u: t, del: false }; }
+  for (const i of itemsOf(l)) { const iid = uid(); copy.items[iid] = { id: iid, n: i.n, q: i.q, d: false, p: 0, w: i.w || 0, c: stamp(), u: t, del: false }; }
   D().lists[id] = copy; touch();
   return id;
 }
@@ -317,8 +328,9 @@ const LOGO = '<svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2
 const SYL = { ok: 'Sincronizado', pend: 'Guardando…', off: 'Sin conexión', err: 'Error al sincronizar' };
 const syncBadge = () => `<span class="sy ${st}" role="status">${SYL[st]}</span>`;
 function paintSync() { document.querySelectorAll('.sy').forEach(e => { e.className = 'sy ' + st; e.textContent = SYL[st]; }); }
-const stepHtml = (label = true) => `<div class="qs" role="group" aria-label="Cantidad a agregar">${label ? '<span>Cantidad</span>' : ''}<button type="button" data-a="aqm" aria-label="Menos">−</button><b id="aq">${addQty}</b><button type="button" data-a="aqp" aria-label="Más">+</button></div>`;
-function syncStep() { const e = $('#aq'); if (e) e.textContent = addQty; }
+const unitSel = (id, u) => `<select id="${id}" aria-label="Unidad de peso"><option value="kg"${u === 'kg' ? ' selected' : ''}>kg</option><option value="g"${u === 'g' ? ' selected' : ''}>g</option></select>`;
+const stepHtml = (label = true) => `<div class="qs" role="group" aria-label="Cantidad y peso a agregar">${label ? '<span>Cantidad</span>' : ''}<button type="button" data-a="aqm" aria-label="Menos">−</button><b id="aq">${addQty}</b><button type="button" data-a="aqp" aria-label="Más">+</button><span class="wt"><input id="aw" type="text" inputmode="decimal" placeholder="Peso" value="${esc(addW)}" autocomplete="off" aria-label="Peso (opcional)">${unitSel('au', addU)}</span></div>`;
+function syncStep() { const e = $('#aq'); if (e) e.textContent = addQty; const w = $('#aw'); if (w) w.value = addW; const u = $('#au'); if (u) u.value = addU; }
 
 function vAuth() {
   const login = authMode === 'login';
@@ -344,7 +356,8 @@ function vHome() {
 <p class="ask">¿Qué vas a agregar hoy?</p>
 <form id="qa" class="qa home" autocomplete="off">
 <input id="qi" class="in" type="text" placeholder="Ej: leche, 2 pan, queso x3" enterkeyhint="done" autocomplete="off" autocapitalize="sentences" aria-label="Producto">
-<div class="qrow">${stepHtml(false)}<button id="dest" type="button" class="dest" data-a="pick" aria-haspopup="dialog" aria-label="Lista donde agregar"></button></div>
+${stepHtml(false)}
+<button id="dest" type="button" class="dest" data-a="pick" aria-haspopup="dialog" aria-label="Lista donde agregar"></button>
 <button class="btn" type="submit">Agregar</button>
 </form>
 <div id="sug"></div>
@@ -365,15 +378,17 @@ function listStats(l) {
 function cardHtml(l) {
   const s = listStats(l);
   const sub = !s.total ? 'Vacía' : s.left === 0 ? 'Todo comprado ✓' : `${s.left} por comprar · ${s.total} en total`;
-  return `<button class="card" data-a="open" data-id="${esc(l.id)}"><b>${lh(l)}${D().last === l.id ? '<span class="tag">Última</span>' : ''}</b><small>${sub}</small>${s.total ? `<div class="pbar" aria-hidden="true"><i style="width:${Math.round(s.done / s.total * 100)}%"></i></div>` : ''}</button>`;
+  return `<div class="card pc" data-id="${esc(l.id)}"><button class="pmain" data-a="open" data-id="${esc(l.id)}"><b>${lh(l)}${D().last === l.id ? '<span class="tag">Última</span>' : ''}</b><small>${sub}</small>${s.total ? `<div class="pbar" aria-hidden="true"><i style="width:${Math.round(s.done / s.total * 100)}%"></i></div>` : ''}</button>${gripBtn('Reordenar ' + l.n)}</div>`;
 }
 function cardsHtml() {
   const L = lists();
   if (!L.length) return `<div class="empty"><div class="big" aria-hidden="true">🛒</div><h2>Todavía no tenés listas</h2><p class="mut">Creá la primera y empezá a cargar productos.</p></div>`;
   return L.map(cardHtml).join('');
 }
+const GRIP = '<svg viewBox="0 0 12 20" width="12" height="20" fill="currentColor" aria-hidden="true"><circle cx="3" cy="4" r="1.6"/><circle cx="9" cy="4" r="1.6"/><circle cx="3" cy="10" r="1.6"/><circle cx="9" cy="10" r="1.6"/><circle cx="3" cy="16" r="1.6"/><circle cx="9" cy="16" r="1.6"/></svg>';
+const gripBtn = label => `<button type="button" class="grip" aria-label="${esc(label)}" title="Arrastrá para reordenar">${GRIP}</button>`;
 function vLists() {
-  return `<div class="bar"><h1>Mis listas</h1>${syncBadge()}</div><div id="cards">${cardsHtml()}</div><button class="btn newbtn" data-a="newlist">+ Nueva lista</button>`;
+  return `<div class="bar"><h1>Mis listas</h1>${syncBadge()}</div><div id="cards" data-sort="lists">${cardsHtml()}</div><button class="btn newbtn" data-a="newlist">+ Nueva lista</button>`;
 }
 function paintCards() { const el = $('#cards'); if (el) el.innerHTML = cardsHtml(); }
 
@@ -384,7 +399,7 @@ function vList() {
 }
 function rowHtml(i) {
   const pr = i.d ? `<label class="pr"><span aria-hidden="true">$</span><input type="text" inputmode="decimal" data-pr="${esc(i.id)}" value="${i.p ? esc(String(i.p).replace('.', ',')) : ''}" placeholder="0" autocomplete="off" aria-label="Precio de ${esc(i.n)}"></label>` : '';
-  return `<div class="it${i.d ? ' done' : ''}"><button class="main" data-a="tg" data-id="${esc(i.id)}" aria-pressed="${i.d}"><span class="box" aria-hidden="true"></span><span class="nm">${esc(i.n)}</span>${i.q > 1 ? `<span class="qty">×${i.q}</span>` : ''}</button>${pr}<button class="more" data-a="ed" data-id="${esc(i.id)}" aria-label="Editar ${esc(i.n)}">⋯</button></div>`;
+  return `<div class="it${i.d ? ' done' : ''}"><button class="main" data-a="tg" data-id="${esc(i.id)}" aria-pressed="${i.d}"><span class="box" aria-hidden="true"></span><span class="nm">${esc(i.n)}</span>${i.q > 1 ? `<span class="qty">×${i.q}</span>` : ''}${i.w ? `<span class="qty wg">${fmtW(i.w)}</span>` : ''}</button>${pr}<button class="more" data-a="ed" data-id="${esc(i.id)}" aria-label="Editar ${esc(i.n)}">⋯</button></div>`;
 }
 function paintList() {
   const l = curList(); if (!l) return;
@@ -420,9 +435,13 @@ function histCard(b) {
 function histHtml() {
   const B = buys();
   if (!B.length) return `<div class="empty"><div class="big" aria-hidden="true">🧾</div><h2>Todavía no hay compras</h2><p class="mut">Marcá productos en una lista y tocá <b>Comprado</b>: queda guardada acá con lo que gastaste.</p></div>`;
-  const mk = today().slice(0, 7), mb = B.filter(b => b.dt.slice(0, 7) === mk);
+  const months = [...new Set(B.map(b => b.dt.slice(0, 7)).filter(Boolean))].sort().reverse();
+  if (hMonth && !months.includes(hMonth)) hMonth = '';
+  const mk = hMonth || today().slice(0, 7), mb = B.filter(b => b.dt.slice(0, 7) === mk), shown = hMonth ? mb : B;
   const sum = a => Math.round(a.reduce((x, b) => x + b.g, 0) * 100) / 100;
-  return `<div class="hsum"><div><small>Este mes</small><b>${money(sum(mb))}</b><small>${mb.length} ${mb.length === 1 ? 'compra' : 'compras'}</small></div><div><small>Total guardado</small><b>${money(sum(B))}</b><small>${B.length} ${B.length === 1 ? 'compra' : 'compras'}</small></div></div><div id="cards">${B.map(histCard).join('')}</div>`;
+  const cnt = a => `${a.length} ${a.length === 1 ? 'compra' : 'compras'}`;
+  const chips = `<div class="chips mchips" role="group" aria-label="Filtrar por mes"><button type="button" class="chip" data-a="hmonth" data-m="" aria-pressed="${!hMonth}">Todos</button>${months.map(m => `<button type="button" class="chip" data-a="hmonth" data-m="${m}" aria-pressed="${hMonth === m}">${monthLabel(m)}</button>`).join('')}</div>`;
+  return `${chips}<div class="hsum"><div><small>${hMonth ? monthLabel(hMonth) : 'Este mes'}</small><b>${money(sum(mb))}</b><small>${cnt(mb)}</small></div><div><small>Total guardado</small><b>${money(sum(B))}</b><small>${cnt(B)}</small></div></div><div id="cards">${shown.map(histCard).join('')}</div>`;
 }
 function vHist() { return `<div class="bar"><h1>Historial</h1>${syncBadge()}</div><div id="hist">${histHtml()}</div>`; }
 function paintHist() { const e = $('#hist'); if (e) e.innerHTML = histHtml(); }
@@ -457,7 +476,7 @@ function sheetHtml() {
   if (s.t === 'newlist') return listForm('Nueva lista', '', '', 'Crear lista', 'Nombre de la lista');
   if (s.t === 'rename') return listForm('Editar lista', curList()?.n || '', curList()?.e || '', 'Guardar', '');
   if (s.t === 'item') { const i = activeList()?.items[s.id]; if (!i) return '';
-    return `<form id="sf" class="sh" role="dialog" aria-modal="true" aria-label="Editar producto"><h2>Editar producto</h2><input id="sn" class="in" type="text" maxlength="120" value="${esc(i.n)}" autocomplete="off" aria-label="Nombre del producto"><div class="step"><span>Cantidad</span><span style="display:flex;align-items:center;gap:12px"><button type="button" data-a="qm" aria-label="Menos">−</button><b id="sq">${i.q}</b><button type="button" data-a="qp" aria-label="Más">+</button></span></div><button class="btn" type="submit" style="margin-top:18px">Guardar</button><button class="btn danger" type="button" data-a="delitem" data-id="${esc(i.id)}">Eliminar producto</button><button class="btn ghost" type="button" data-a="close">Cancelar</button></form>`; }
+    return `<form id="sf" class="sh" role="dialog" aria-modal="true" aria-label="Editar producto"><h2>Editar producto</h2><input id="sn" class="in" type="text" maxlength="120" value="${esc(i.n)}" autocomplete="off" aria-label="Nombre del producto"><div class="step"><span>Cantidad</span><span style="display:flex;align-items:center;gap:12px"><button type="button" data-a="qm" aria-label="Menos">−</button><b id="sq">${i.q}</b><button type="button" data-a="qp" aria-label="Más">+</button></span></div><div class="step"><span>Peso</span><span class="wt"><input id="sw" type="text" inputmode="decimal" placeholder="Sin peso" value="${i.w ? esc(String(i.w >= 1000 ? i.w / 1000 : i.w).replace('.', ',')) : ''}" autocomplete="off" aria-label="Peso">${unitSel('su', i.w && i.w < 1000 ? 'g' : 'kg')}</span></div><button class="btn" type="submit" style="margin-top:18px">Guardar</button><button class="btn danger" type="button" data-a="delitem" data-id="${esc(i.id)}">Eliminar producto</button><button class="btn ghost" type="button" data-a="close">Cancelar</button></form>`; }
   if (s.t === 'name') return `<form id="sf" class="sh" role="dialog" aria-modal="true" aria-label="Tu nombre"><h2>¿Cómo te llamamos?</h2><input id="sn" class="in" type="text" maxlength="30" value="${esc(D().name || '')}" placeholder="Tu nombre o apodo" autocomplete="off" autocapitalize="words" aria-label="Tu nombre"><button class="btn" type="submit" style="margin-top:14px">Guardar</button><button class="btn ghost" type="button" data-a="close">Cancelar</button></form>`;
   if (s.t === 'pick') { const L = lists(), d = destList();
     return `<div class="sh" role="dialog" aria-modal="true" aria-label="Agregar a otra lista"><h2>Agregar a…</h2>${L.map(l => `<button class="rowb" data-a="setdest" data-id="${esc(l.id)}"><span>${lh(l)}</span>${d && l.id === d.id ? '<span class="ck" aria-label="Lista elegida">✓</span>' : ''}</button>`).join('')}<button class="rowb" data-a="newlist" style="color:var(--acc);font-weight:700">+ Nueva lista</button></div>`; }
@@ -473,7 +492,7 @@ function sheetHtml() {
 <button class="btn" type="submit" style="margin-top:14px">Guardar</button><button class="btn ghost" type="button" data-a="close">Cancelar</button></form>`; }
   if (s.t === 'hbuy') { const b = D().buys[s.id]; if (!b || b.del) return '';
     return `<form id="sf" class="sh" role="dialog" aria-modal="true" aria-label="Compra"><h2>${esc(b.n)}</h2>
-<ul class="bl">${b.its.map(i => `<li><span>${esc(i.n)}${i.q > 1 ? ` <i>×${i.q}</i>` : ''}</span><b>${i.p ? money(i.p) : '—'}</b></li>`).join('')}</ul>
+<ul class="bl">${b.its.map(i => `<li><span>${esc(i.n)}${i.q > 1 ? ` <i>×${i.q}</i>` : ''}${i.w ? ` <i>${fmtW(i.w)}</i>` : ''}</span><b>${i.p ? money(i.p) : '—'}</b></li>`).join('')}</ul>
 <label class="f">Nombre<input id="bn" type="text" maxlength="80" value="${esc(b.n)}" autocomplete="off"></label>
 <label class="f">Fecha<input id="bd" type="date" value="${esc(b.dt)}"></label>
 <label class="f">Total gastado<input id="bg" type="text" inputmode="decimal" value="${b.g ? esc(String(b.g).replace('.', ',')) : ''}" autocomplete="off"></label>
@@ -583,7 +602,7 @@ async function deleteAccount() {
   toast('Cuenta eliminada');
 }
 function exportData() {
-  const out = { exportado: new Date().toISOString(), listas: lists().map(l => ({ nombre: l.n, emoji: l.e || '', productos: itemsOf(l).map(i => ({ nombre: i.n, cantidad: i.q, comprado: i.d, precio: i.p || 0 })) })),
+  const out = { exportado: new Date().toISOString(), listas: lists().map(l => ({ nombre: l.n, emoji: l.e || '', productos: itemsOf(l).map(i => ({ nombre: i.n, cantidad: i.q, comprado: i.d, precio: i.p || 0, pesoGramos: i.w || 0 })) })),
     historial: buys().map(b => ({ nombre: b.n, fecha: b.dt, lista: b.ln, gastado: b.g, productos: b.its.map(i => ({ nombre: i.n, cantidad: i.q, precio: i.p })) })) };
   const a = document.createElement('a');
   a.href = URL.createObjectURL(new Blob([JSON.stringify(out, null, 2)], { type: 'application/json' }));
@@ -597,6 +616,7 @@ const A = {
   am(b) { authMode = b.dataset.m; authErr = ''; render(); },
   lists() { go('lists'); },
   open(b) { openList(b.dataset.id); },
+  hmonth(b) { hMonth = b.dataset.m || ''; paintHist(); },
   editbuy() { openSheet({ t: 'buy' }); },
   closebuy() { closeBuy(); },
   hopen(b) { openSheet({ t: 'hbuy', id: b.dataset.id }); },
@@ -669,7 +689,7 @@ document.addEventListener('submit', e => {
     else if (sheet.t === 'item') {
       const i = activeList()?.items[sheet.id];
       const n = val.trim().slice(0, 120);
-      if (i && n) { i.n = n; i.q = Math.min(99, Math.max(1, +$('#sq').textContent || 1)); i.u = now(); touch(); }
+      if (i && n) { i.n = n; i.q = Math.min(99, Math.max(1, +$('#sq').textContent || 1)); i.w = toGrams(($('#sw') || {}).value, ($('#su') || {}).value); i.u = now(); touch(); }
       closeSheet(); repaint();
     }
   }
@@ -678,13 +698,65 @@ document.addEventListener('input', e => {
   const t = e.target;
   if (t.id === 'qi') paintSug();
   if (t.dataset && t.dataset.pr) setPrice(t.dataset.pr, t.value);
+  if (t.id === 'aw') addW = t.value;
   if (t.id === 'se') { t.value = lastEmoji(t.value); markEmo(); }
   const au = t.dataset && t.dataset.au;
   if (au === 'name') authName = t.value;
   else if (au === 'email') authEmail = t.value;
   else if (au === 'pass') authPass = t.value;
 });
+document.addEventListener('change', e => { if (e.target.id === 'au') addU = e.target.value === 'g' ? 'g' : 'kg'; });
 document.addEventListener('keydown', e => { if (e.key === 'Escape' && sheet) closeSheet(); });
+
+/* ---------- Reordenar (arrastrar con el agarre ⋮⋮, o con las flechas ↑ ↓ del teclado) ---------- */
+function reorder(kind, ids) {
+  const map = D().lists, t = now();
+  let ch = false;
+  ids.forEach((id, i) => { const e = map[id]; if (e && e.o !== i + 1) { e.o = i + 1; e.u = t; ch = true; } });
+  if (ch) touch();
+  paintCards();
+}
+const itemsIn = c => [...c.children].filter(x => x.dataset.id);
+document.addEventListener('pointerdown', e => {
+  const h = e.target.closest('.grip'); if (!h || (e.pointerType === 'mouse' && e.button !== 0)) return;
+  const el = h.parentElement.closest('[data-id]'), cont = el && el.parentElement;
+  if (!cont || !cont.dataset.sort) return;
+  e.preventDefault();
+  dragging = true; h.setPointerCapture(e.pointerId); el.classList.add('drag'); document.body.classList.add('dragging');
+  let startY = e.clientY;
+  const move = ev => {
+    let dy = ev.clientY - startY; el.style.transform = `translateY(${dy}px)`;
+    const mid = el.getBoundingClientRect().top + el.offsetHeight / 2;
+    for (const s of itemsIn(cont)) {
+      if (s === el) continue;
+      const r = s.getBoundingClientRect(), sm = r.top + r.height / 2, after = !!(el.compareDocumentPosition(s) & Node.DOCUMENT_POSITION_FOLLOWING);
+      if ((after && mid > sm) || (!after && mid < sm)) {
+        const before = el.getBoundingClientRect().top;
+        if (after) el.before(s); else el.after(s);   // se mueve el vecino (no el agarre) para no perder la captura del puntero
+        const layoutTop = el.getBoundingClientRect().top - dy;
+        dy = before - layoutTop; startY = ev.clientY - dy; el.style.transform = `translateY(${dy}px)`;
+        break;
+      }
+    }
+    if (ev.clientY < 90) window.scrollBy(0, -12); else if (ev.clientY > innerHeight - 110) window.scrollBy(0, 12);
+  };
+  const end = ev => {
+    h.removeEventListener('pointermove', move); h.removeEventListener('pointerup', end); h.removeEventListener('pointercancel', end);
+    el.style.transform = ''; el.classList.remove('drag'); document.body.classList.remove('dragging'); dragging = false;
+    reorder(cont.dataset.sort, itemsIn(cont).map(x => x.dataset.id));
+  };
+  h.addEventListener('pointermove', move); h.addEventListener('pointerup', end); h.addEventListener('pointercancel', end);
+});
+document.addEventListener('keydown', e => {
+  const h = e.target.closest && e.target.closest('.grip'); if (!h || (e.key !== 'ArrowUp' && e.key !== 'ArrowDown')) return;
+  const el = h.parentElement.closest('[data-id]'), cont = el && el.parentElement; if (!cont || !cont.dataset.sort) return;
+  e.preventDefault();
+  const ids = itemsIn(cont).map(x => x.dataset.id), i = ids.indexOf(el.dataset.id), j = e.key === 'ArrowUp' ? i - 1 : i + 1;
+  if (j < 0 || j >= ids.length) return;
+  [ids[i], ids[j]] = [ids[j], ids[i]];
+  const id = el.dataset.id; reorder(cont.dataset.sort, ids);
+  const nb = document.querySelector(`[data-id="${CSS.escape(id)}"] .grip`); if (nb) nb.focus();
+});
 
 /* ---------- Ciclo de vida ---------- */
 document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && S.token) sync(); });

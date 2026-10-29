@@ -107,7 +107,7 @@ await step('Home: todo centrado y con el orden texto → cantidad → selector d
   const [h1, qi, qs, dest, add] = [await bb('#hi'), await bb('#qi'), await bb('.qa.home .qs'), await bb('#dest'), await bb('.qa.home button[type=submit]')];
   assert.ok(Math.abs(h1.x + h1.width / 2 - vp.width / 2) < 3, 'saludo centrado en horizontal');
   assert.ok(Math.abs(qi.x + qi.width / 2 - vp.width / 2) < 3, 'campo centrado en horizontal');
-  assert.ok(qi.y + qi.height <= qs.y + 1 && qs.x + qs.width <= dest.x + 1 && Math.abs(qs.y - dest.y) < 12 && Math.max(qs.y + qs.height, dest.y + dest.height) <= add.y + 1, 'orden del formulario');
+  assert.ok(qi.y + qi.height <= qs.y + 1 && qs.y + qs.height <= dest.y + 1 && dest.y + dest.height <= add.y + 1, 'orden del formulario: texto, cantidad y peso, lista, Agregar');
   const sug = await bb('#sug');
   const top = h1.y, bottom = Math.max(add.y + add.height, sug.y + sug.height), nav = await bb('#nv nav');
   const gapTop = top - 64, gapBottom = nav.y - bottom;
@@ -412,6 +412,40 @@ await step('cerrar sesión borra los datos locales y al volver a ingresar recupe
   await a.locator('#af button[type=submit]').click();
   await a.getByRole('heading', { name: 'Hola Tai 👋' }).waitFor();
 });
+console.log('peso, orden de listas y filtro por mes');
+await step('al agregar se puede poner el peso: kilos por defecto, o gramos', async () => {
+  await goTab(a, 'home');
+  assert.equal(await a.locator('#au').inputValue(), 'kg', 'kilos por defecto');
+  const q = await a.locator('.qa.home .qs [data-a=aqp]').boundingBox(), w = await a.locator('#aw').boundingBox();
+  assert.ok(Math.abs((q.y + q.height / 2) - (w.y + w.height / 2)) < 12 && q.x < w.x, 'el peso está al lado de la cantidad');
+  await a.fill('#qi', 'Asado'); await a.fill('#aw', '1,5'); await a.keyboard.press('Enter');
+  assert.equal(await a.inputValue('#aw'), '', 'se reinicia');
+  await a.fill('#qi', 'Queso'); await a.selectOption('#au', 'g'); await a.fill('#aw', '250'); await a.keyboard.press('Enter');
+  assert.equal(await a.locator('#au').inputValue(), 'kg', 'vuelve a kilos');
+  await openLast(a);
+  assert.equal((await row(a, '#items', 'Asado').locator('.wg').textContent()).trim(), '1,5 kg');
+  assert.equal((await row(a, '#items', 'Queso').locator('.wg').textContent()).trim(), '250 g');
+  await row(a, '#items', 'Asado').locator('.more').click();
+  assert.equal(await a.inputValue('#sw'), '1,5'); assert.equal(await a.inputValue('#su'), 'kg');
+  await a.fill('#sw', '750'); await a.selectOption('#su', 'g'); await a.locator('#sf button[type=submit]').click();
+  assert.equal((await row(a, '#items', 'Asado').locator('.wg').textContent()).trim(), '750 g');
+  await a.screenshot({ path: join(SHOTS, '11-peso.png') });
+});
+await step('las listas se reordenan arrastrando y con el teclado, y se recuerda', async () => {
+  await goTab(a, 'lists');
+  const names = async () => (await a.locator('#cards .pc .pmain b').allTextContents()).map(t => t.replace('Última', '').trim());
+  const before = await names(); assert.ok(before.length >= 3, 'hay varias listas: ' + before);
+  const g = await a.locator('#cards .pc').nth(before.length - 1).locator('.grip').boundingBox(), f = await a.locator('#cards .pc').first().boundingBox();
+  await a.mouse.move(g.x + g.width / 2, g.y + g.height / 2); await a.mouse.down();
+  await a.mouse.move(g.x + g.width / 2, f.y + 6, { steps: 14 }); await a.mouse.up();
+  await a.waitForFunction(([n]) => document.querySelector('#cards .pc .pmain b')?.textContent.replace('Última', '').trim() === n, [before[before.length - 1]]);
+  const after = await names(); assert.equal(after[0], before[before.length - 1]);
+  await settle(a); await a.reload(); await goTab(a, 'lists');
+  assert.deepEqual(await names(), after);
+  await a.locator('#cards .pc').first().locator('.grip').focus(); await a.keyboard.press('ArrowDown');
+  assert.equal((await names())[1], after[0]);
+  await a.screenshot({ path: join(SHOTS, '11b-listas-orden.png') });
+});
 console.log('compra, precios e historial');
 await step('marcar productos arma la compra del carrito con nombre, fecha y total', async () => {
   await openLast(a);
@@ -483,6 +517,29 @@ await step('una compra del historial se puede eliminar', async () => {
   await a.locator('[data-a=delbuy]').click();
   await a.locator('.sh .btn', { hasText: 'Sí, eliminar' }).click();
   await a.getByText('Todavía no hay compras').waitFor();
+});
+await step('el historial se filtra por mes y los totales siguen al mes elegido', async () => {
+  await openLast(a);
+  for (const [nm, dt, g] of [['Manzanas', '2026-09-15', '2000'], ['Peras', '2026-10-03', '700']]) {
+    await a.fill('#qi', nm); await a.keyboard.press('Enter');
+    await row(a, '#items', nm).locator('.main').click();
+    await a.locator('.buy [data-a=editbuy]').click();
+    await a.locator('#bd').fill(dt); await a.locator('#bg').fill(g); await a.locator('#sf button[type=submit]').click();
+    await a.locator('.buy [data-a=closebuy]').click();
+    await toastHas(a, 'Compra guardada');
+  }
+  await goTab(a, 'hist');
+  const chips = (await a.locator('.mchips .chip').allTextContents()).map(t => t.trim());
+  assert.deepEqual(chips, ['Todos', 'Octubre 2026', 'Septiembre 2026']);
+  assert.equal(await a.locator('.hc').count(), 2);
+  await a.getByRole('button', { name: 'Septiembre 2026' }).click();
+  assert.equal(await a.locator('.hc').count(), 1);
+  assert.match(await a.locator('.hc').textContent(), /2\.000/);
+  assert.match(await a.locator('.hsum > div').first().textContent(), /Septiembre 2026\s*\$2\.000/);
+  assert.equal(await a.getByRole('button', { name: 'Septiembre 2026' }).getAttribute('aria-pressed'), 'true');
+  await a.screenshot({ path: join(SHOTS, '11c-historial-mes.png') });
+  await a.getByRole('button', { name: 'Todos' }).click();
+  assert.equal(await a.locator('.hc').count(), 2);
 });
 await step('eliminar la cuenta borra todo en el servidor', async () => {
   await goTab(a, 'set');

@@ -37,7 +37,7 @@ function sanitizeState(d, now) {
     if (!idOk(id) || !l || typeof l !== 'object') continue;
     const del = !!l.del, u = num(l.u);
     if (del && u < now - TOMB_TTL) continue;
-    const nl = { id, n: str(l.n, 80) || 'Lista', e: firstEmoji(l.e), c: num(l.c), u, del, items: {}, buy: null };
+    const nl = { id, n: str(l.n, 80) || 'Lista', e: firstEmoji(l.e), o: Math.min(1e6, Math.max(0, Math.round(num(l.o)))), c: num(l.c), u, del, items: {}, buy: null };
     if (!del && l.buy && typeof l.buy === 'object') nl.buy = { n: str(l.buy.n, 80).trim(), dt: ymdOk(l.buy.dt) ? l.buy.dt : '', g: price(l.buy.g) };
     if (!del && l.items && typeof l.items === 'object') {
       for (const iid of Object.keys(l.items).slice(0, MAXI)) {
@@ -47,7 +47,7 @@ function sanitizeState(d, now) {
         if (idel && iu < now - TOMB_TTL) continue;
         const n = str(it.n, 120).trim();
         if (!n) continue;
-        nl.items[iid] = { id: iid, n, q: Math.min(99, Math.max(1, Math.round(num(it.q)) || 1)), d: !!it.d, p: it.d ? price(it.p) : 0, c: num(it.c), u: iu, del: idel };
+        nl.items[iid] = { id: iid, n, q: Math.min(99, Math.max(1, Math.round(num(it.q)) || 1)), d: !!it.d, p: it.d ? price(it.p) : 0, w: Math.min(1e7, Math.max(0, Math.round(num(it.w)))), c: num(it.c), u: iu, del: idel };
       }
     }
     out.lists[id] = nl;
@@ -65,7 +65,7 @@ function sanitizeState(d, now) {
     if (!del && Array.isArray(b.its)) for (const x of b.its.slice(0, MAXBI)) {
       if (!x || typeof x !== 'object') continue;
       const n = str(x.n, 120).trim();
-      if (n) its.push({ n, q: Math.min(99, Math.max(1, Math.round(num(x.q)) || 1)), p: price(x.p) });
+      if (n) its.push({ n, q: Math.min(99, Math.max(1, Math.round(num(x.q)) || 1)), p: price(x.p), w: Math.min(1e7, Math.max(0, Math.round(num(x.w)))) });
     }
     be.push({ id, lid: idOk(b.lid) ? b.lid : '', ln: str(b.ln, 80), le: firstEmoji(b.le), n: str(b.n, 80).trim() || 'Compra', dt: ymdOk(b.dt) ? b.dt : '', g: price(b.g), its, c: num(b.c), u, del });
   }
